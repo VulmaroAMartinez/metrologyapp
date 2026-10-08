@@ -15,10 +15,11 @@ from django.conf import settings
 from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
-from django.db import transaction
+from django.db import OperationalError, transaction
 from django.db.models import Case, DateTimeField, F, Q, Value, When
 from django.db.models.lookups import GreaterThanOrEqual
 from django.utils import timezone
+from psycopg.errors import LockNotAvailable
 
 from .models import Usuario
 
@@ -35,6 +36,7 @@ class MotivoFallo(StrEnum):
     BLOQUEADO = "bloqueado"
     SIN_CONTRASENA = "sin_contrasena"
     CONTRASENA_INCORRECTA = "contrasena_incorrecta"
+    INTENTO_SIMULTANEO = "intento_simultaneo"  # otro intento contra la misma cuenta en curso
 
 
 @dataclass(frozen=True)
@@ -71,25 +73,39 @@ def _motivo_no_elegible(usuario, ahora) -> MotivoFallo | None:
 
 
 def iniciar_sesion(request, correo: str, contrasena: str) -> ResultadoLogin:
-    # La fila queda bloqueada (FOR UPDATE) desde que se lee hasta que se registra el resultado:
-    # los intentos simultáneos contra la misma cuenta se serializan y cada uno ve el bloqueo
-    # que dejó el anterior. Sin esto, una ráfaga en paralelo pasaría la comprobación de
-    # "no bloqueado" antes de que se registrara ningún fallo y superaría el umbral.
-    with transaction.atomic():
-        usuario = Usuario.objects.select_for_update().filter(correo=correo.strip().lower()).first()
-        ahora = timezone.now()  # después de obtener el bloqueo: la espera no deja la hora vieja
-        motivo = _motivo_no_elegible(usuario, ahora)
+    # La fila queda bloqueada (FOR UPDATE NOWAIT) desde que se lee hasta que se registra el
+    # resultado, así ninguna ráfaga en paralelo pasa la comprobación de "no bloqueado" antes de
+    # que se registre un fallo. NOWAIT: quien no obtiene el candado NO espera (no se pueden
+    # saturar workers contra una cuenta) y se rechaza tras la misma verificación de hash que
+    # cualquier otro fallo, para que el tiempo no delate que la cuenta existe.
+    usuario = None
+    try:
+        with transaction.atomic():
+            usuario = (
+                Usuario.objects.select_for_update(nowait=True)
+                .filter(correo=correo.strip().lower())
+                .first()
+            )
+            ahora = timezone.now()  # tras obtener el candado
+            motivo = _motivo_no_elegible(usuario, ahora)
 
-        # Siempre exactamente una verificación de hash, exista o no el usuario, esté o no bloqueado.
-        encoded = dummy_hash() if motivo else usuario.password
-        contrasena_correcta = check_password(contrasena, encoded)
+            # Siempre exactamente una verificación de hash, exista o no el usuario.
+            encoded = dummy_hash() if motivo else usuario.password
+            contrasena_correcta = check_password(contrasena, encoded)
 
-        if motivo is None and not contrasena_correcta:
-            motivo = MotivoFallo.CONTRASENA_INCORRECTA
-            _registrar_fallo(usuario.pk, ahora)
-        elif motivo is None:
-            Usuario.objects.filter(pk=usuario.pk).update(intentos_fallidos=0, bloqueado_hasta=None)
-            usuario.intentos_fallidos, usuario.bloqueado_hasta = 0, None
+            if motivo is None and not contrasena_correcta:
+                motivo = MotivoFallo.CONTRASENA_INCORRECTA
+                _registrar_fallo(usuario.pk, ahora)
+            elif motivo is None:
+                Usuario.objects.filter(pk=usuario.pk).update(
+                    intentos_fallidos=0, bloqueado_hasta=None
+                )
+                usuario.intentos_fallidos, usuario.bloqueado_hasta = 0, None
+    except OperationalError as error:
+        if not isinstance(error.__cause__, LockNotAvailable):
+            raise
+        check_password(contrasena, dummy_hash())
+        motivo = MotivoFallo.INTENTO_SIMULTANEO
 
     if motivo is not None:
         logger.info("Inicio de sesión rechazado: motivo=%s", motivo.value)

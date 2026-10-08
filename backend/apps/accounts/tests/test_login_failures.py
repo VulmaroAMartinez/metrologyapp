@@ -201,21 +201,21 @@ def test_failure_counter_is_atomic_across_connections(settings):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_parallel_guesses_cannot_exceed_the_lock_threshold():
+def test_parallel_guesses_cannot_exceed_the_lock_threshold_and_never_skip_the_hash():
     """Ráfaga de 12 intentos simultáneos contra la misma cuenta (umbral: 5).
 
-    La verificación se alarga 0,2 s para que todos coincidan. Con lectura sin bloqueo, los 12
-    comprobarían "no bloqueado" antes de que el primero registrara un fallo y los 12 probarían
-    la contraseña real; con la fila bloqueada, solo 5 llegan a probarla y el resto ya ve el bloqueo.
+    La verificación se alarga 0,2 s para que todos coincidan. Con lectura sin candado, los 12
+    probarían la contraseña real (el umbral no serviría). Con NOWAIT, solo quien obtiene el
+    candado la prueba; los demás se rechazan sin esperar, pero cada uno ejecuta exactamente una
+    verificación de hash (contra el ficticio), así el tiempo no revela que la cuenta existe.
     """
     usuario = UsuarioFactory(correo=CORREO)
-    contra_hash_real = []
+    llamadas = []
     real = services.check_password
 
     def lenta(contrasena, encoded):
         time.sleep(0.2)
-        if encoded == usuario.password:
-            contra_hash_real.append(1)
+        llamadas.append(encoded)
         return real(contrasena, encoded)
 
     def intento(_):
@@ -229,10 +229,42 @@ def test_parallel_guesses_cannot_exceed_the_lock_threshold():
             motivos = list(pool.map(intento, range(12)))
 
     usuario.refresh_from_db()
-    assert len(contra_hash_real) == 5
-    assert motivos.count(services.MotivoFallo.CONTRASENA_INCORRECTA) == 5
-    assert motivos.count(services.MotivoFallo.BLOQUEADO) == 7
-    assert usuario.bloqueado_hasta is not None
+    contra_real = [e for e in llamadas if e == usuario.password]
+    assert len(llamadas) == 12  # una verificación por intento, nunca ninguna
+    assert 1 <= len(contra_real) <= 5  # jamás más que el umbral
+    assert motivos.count(services.MotivoFallo.CONTRASENA_INCORRECTA) == len(contra_real)
+    assert motivos.count(services.MotivoFallo.INTENTO_SIMULTANEO) >= 1
+    assert all(m is not None for m in motivos)
+
+
+def test_contended_attempt_is_rejected_without_waiting_and_looks_like_any_failure(api, usuario):
+    from django.db import OperationalError
+    from psycopg.errors import LockNotAvailable
+
+    error = OperationalError("could not obtain lock")
+    error.__cause__ = LockNotAvailable()
+    with (
+        mock.patch.object(services.Usuario.objects, "select_for_update", side_effect=error),
+        mock.patch.object(services, "check_password", wraps=services.check_password) as spy,
+    ):
+        respuesta = api.login(usuario.correo, DEFAULT_PASSWORD)  # incluso con la contraseña buena
+
+    assert respuesta.status_code == 401
+    assert respuesta.json()["codigo"] == "credenciales_invalidas"
+    assert spy.call_count == 1
+    assert spy.call_args.args[1] == services.dummy_hash()
+
+
+def test_other_database_errors_are_not_swallowed(api, usuario):
+    from django.db import OperationalError
+
+    with (
+        mock.patch.object(
+            services.Usuario.objects, "select_for_update", side_effect=OperationalError("caída")
+        ),
+        pytest.raises(OperationalError, match="caída"),
+    ):
+        services.iniciar_sesion(None, usuario.correo, DEFAULT_PASSWORD)
 
 
 # --- límite de tasa ---------------------------------------------------------------------
