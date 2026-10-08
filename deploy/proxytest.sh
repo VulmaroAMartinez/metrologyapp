@@ -29,4 +29,4 @@ $COMPOSE up -d --build --wait db
 $COMPOSE --profile tools run --rm migrate
 $COMPOSE up -d --build --wait
 $COMPOSE --profile tools run --rm --no-deps -e PROXY_BASE_URL=http://proxy:8080 test \
-  pytest -p no:django -p no:cacheprovider -o addopts="" -v proxytests
+  pytest --ds=config.settings.test -p no:cacheprovider -o addopts="" -v proxytests

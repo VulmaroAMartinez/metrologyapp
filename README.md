@@ -66,6 +66,8 @@ prueba: `docker compose -f deploy/docker-compose.yml --env-file .env --profile t
 
 ## Producción
 
+**El sistema se instala solo en red interna o VPN, nunca expuesto directo a internet** (el bloqueo de cuentas y el límite de tasa asumen un atacante con pocas IPs).
+
 `config.settings.prod` se niega a arrancar si: `DJANGO_DEBUG` está activo, `DJANGO_ALLOWED_HOSTS` está vacío,
 `DJANGO_SECRET_KEY` o `DB_PASSWORD` conservan el valor de ejemplo (prefijo `EJEMPLO`) o la clave
 secreta tiene menos de 50 caracteres. El esquema OpenAPI (`/api/v1/schema/`) no se sirve en producción.

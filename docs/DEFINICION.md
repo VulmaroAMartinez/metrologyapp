@@ -75,7 +75,7 @@ Reglas generales \[PROPUESTA\]: nunca se borra físicamente un registro de negoc
 
 | Tabla | Campos | Restricciones |
 | --- | --- | --- |
-| Usuario | nombre, no. nomina, correo, rol (ADMIN, TECNICO, ESPECTADOR), activo, contraseña (hash), intentos\_fallidos, bloqueado\_hasta | correo único; modelo de usuario propio de Django desde el primer commit |
+| Usuario | nombre, numero_nomina, debe_cambiar_contrasena, correo, rol (ADMIN, TECNICO, ESPECTADOR), activo, contraseña (hash), intentos\_fallidos, bloqueado\_hasta | correo único; modelo de usuario propio de Django desde el primer commit |
 | Area | codigo (3 dígitos), nombre, activa | codigo único |
 | TipoInstrumento | codigo (2 letras), nombre, activo | codigo único |
 | Magnitud | nombre, activa | nombre único |
@@ -170,7 +170,7 @@ Corrección del diagrama: el evento de salida de servicio del paso 3 debe decir 
 
 Cada evento guarda fecha y hora, usuario (o Sistema), instrumento si aplica, tipo, descripción legible y los datos antes y después. Formato de la descripción: `dd-mm-aaaa hh:mm · ID · texto · usuario`.
 
-Tipos: INSTRUMENTO\_ALTA, INSTRUMENTO\_EDITADO, INSTRUMENTO\_CAMBIO\_AREA, INSTRUMENTO\_CAMBIO\_ESTADO (de → a, con motivo), CALIBRACION\_REGISTRADA, CERTIFICADO\_SUBIDO, CERTIFICADO\_ELIMINADO, REEMPLAZO\_INICIADO, REEMPLAZO\_TERMINADO, AVISO\_CREADO, AVISO\_EDITADO, AVISO\_CANCELADO, AVISO\_ENVIADO, AVISO\_FALLIDO, USUARIO\_CREADO, USUARIO\_ROL\_CAMBIADO, USUARIO\_DESACTIVADO, USUARIO\_CONTRASENA\_RESTABLECIDA, SESION\_INICIADA, SESION\_FALLIDA, CATALOGO\_MODIFICADO, CONFIGURACION\_CAMBIADA, PROCESO\_DIARIO\_EJECUTADO (resumen de avisos enviados e instrumentos pasados a Caducado).
+Tipos: INSTRUMENTO\_ALTA, INSTRUMENTO\_EDITADO, INSTRUMENTO\_CAMBIO\_AREA, INSTRUMENTO\_CAMBIO\_ESTADO (de → a, con motivo), CALIBRACION\_REGISTRADA, CERTIFICADO\_SUBIDO, CERTIFICADO\_ELIMINADO, REEMPLAZO\_INICIADO, REEMPLAZO\_TERMINADO, AVISO\_CREADO, AVISO\_EDITADO, AVISO\_CANCELADO, AVISO\_ENVIADO, AVISO\_FALLIDO, USUARIO\_CREADO, USUARIO\_ROL\_CAMBIADO, USUARIO\_DESACTIVADO, USUARIO\_CONTRASENA\_RESTABLECIDA, SESION\_INICIADA, SESION\_FALLIDA, CATALOGO\_MODIFICADO, CONFIGURACION\_CAMBIADA, PROCESO\_DIARIO\_EJECUTADO, USUARIO\_CONTRASENA_CAMBIADA, y CUENTA_BLOQUEADA (resumen de avisos enviados e instrumentos pasados a Caducado).
 
 - Solo se registran **cambios**; no se registran consultas ni descargas.
 - Los cambios automáticos también generan eventos, con usuario Sistema.

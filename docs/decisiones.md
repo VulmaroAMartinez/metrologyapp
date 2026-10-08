@@ -43,6 +43,12 @@ Se completa al terminar el sprint. Los valores provisionales se listan para que 
 | Límite de login por IP sola | 20 por minuto | `LOGIN_RATE_PER_IP` |
 | Cierre de sesión por inactividad | 30 min | `SESSION_IDLE_MINUTES` |
 
+## Decisiones de Vul (cierre del commit 5)
+- **No hay desbloqueo manual de cuentas**: ni endpoint, ni comando `desbloquear_usuario`, ni evento `USUARIO_DESBLOQUEADO`. Una cuenta bloqueada solo se libera cuando vence `bloqueado_hasta`. **Consecuencia**: una cuenta que sea objetivo de ataques repetidos puede permanecer bloqueada de forma intermitente (el atacante la vuelve a bloquear al vencer). **Mitigaciones**: evento `CUENTA_BLOQUEADA` en la bitácora (permite detectarlo), límite de tasa por IP e instalación solo en red interna o VPN.
+- **El bloqueo es por cuenta** (no por IP+cuenta).
+- **Instalación solo en red interna o VPN**, nunca expuesta directo a internet. La guía de instalación (sprint 6) debe decirlo; el límite de tasa y el bloqueo asumen un atacante con pocas IPs.
+- **Frontend (commit 11)**: el botón de login se deshabilita mientras se envía; el mensaje de error de login invita a reintentar (un intento duplicado puede recibir 401 por el `NOWAIT`); el token CSRF se obtiene de `/api/v1/auth/csrf/` y se envía en la cabecera `X-CSRFToken` (y se vuelve a pedir tras iniciar sesión, porque rota).
+
 ## Riesgos aceptados
 - **Bloqueo de cuenta por terceros**: cualquiera que conozca un correo válido puede provocar el bloqueo de esa cuenta durante 15 minutos con 5 intentos fallidos (denegación de servicio dirigida). Se mitiga con el límite de tasa por IP, que reduce la velocidad desde una sola IP, pero no lo impide si el atacante usa varias IPs. Alternativas si resulta un problema: bloqueo progresivo, bloquear por IP+cuenta en vez de solo por cuenta, o un desbloqueo por el administrador (no incluido en el sprint 1).
 
