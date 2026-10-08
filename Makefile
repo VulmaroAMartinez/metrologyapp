@@ -31,8 +31,9 @@ fmt: ## Formatea el backend con ruff (escribe en backend/)
 lock: ## Regenera backend/requirements*.txt con hashes (solo wheels)
 	docker run --rm -v "$(CURDIR)/backend:/work" -w //work $(PYIMG) sh -c "pip install -q pip-tools==7.6.2 && 	pip-compile -q --generate-hashes --allow-unsafe --strip-extras --pip-args=--only-binary=:all: -o requirements.txt requirements.in && 	pip-compile -q --generate-hashes --allow-unsafe --strip-extras --pip-args=--only-binary=:all: -o requirements-dev.txt requirements-dev.in"
 
-secrets: ## Escaneo de secretos en el repo
+secrets: ## Escaneo de secretos: historial git y archivos del directorio de trabajo
 	docker run --rm -v "$(CURDIR):/repo" -w //repo zricethezav/gitleaks:v8.30.1 detect --source . --config .gitleaks.toml --no-banner
+	docker run --rm -v "$(CURDIR):/repo" -w //repo zricethezav/gitleaks:v8.30.1 dir . --config .gitleaks.toml --no-banner
 
 # test, lint y ci se completan con cada tarea del sprint (backend, frontend, auditorías).
 test: ## Pruebas (backend con pytest; frontend se suma después)

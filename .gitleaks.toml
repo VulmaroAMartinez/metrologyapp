@@ -3,6 +3,14 @@ title = "metrologyapp"
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "Plantilla sin secretos reales"
 paths = ['''\.env\.example$''']
+
+# Solo constantes con estos nombres, dentro de tests: no es una exención general de tests/.
+[[allowlists]]
+description = "Contraseñas de prueba (constantes de tests)"
+condition = "AND"
+regexTarget = "line"
+paths = ['''backend/.*/tests/.*\.py$''']
+regexes = ['''(DEFAULT_PASSWORD|SECRET)\s*=\s*"[^"]+"''']
