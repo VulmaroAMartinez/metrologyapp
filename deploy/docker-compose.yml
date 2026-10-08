@@ -22,6 +22,7 @@ services:
       - db_data:/var/lib/postgresql
       - ./db/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
       - ./db/init.sql:/opt/db/init.sql:ro
+      - ./db/privileges.sql:/opt/db/privileges.sql:ro
     # Sin `ports`: la base de datos no se publica al host.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d $${POSTGRES_DB}"]
@@ -94,6 +95,7 @@ services:
       APP_DB_PASSWORD: ${APP_PASSWORD:?Falta APP_PASSWORD en .env} # solo para probar los privilegios del rol app
     volumes:
       - ../.env.example:/app/.env.example:ro
+      - ./db/privileges.sql:/app/db/privileges.sql:ro # las pruebas de roles lo aplican a su base propia
     depends_on:
       db: {condition: service_healthy}
     read_only: true
