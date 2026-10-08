@@ -76,6 +76,9 @@ services:
     <<: *hardening
     image: caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
     user: "10001:10001" # Caddy escucha en 8080 (sin privilegios)
+    # El binario de Caddy lleva file capability net_bind_service; con cap_drop ALL
+    # el kernel rechaza el exec. Se devuelve solo esa capacidad.
+    cap_add: [NET_BIND_SERVICE]
     environment:
       CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-}
     volumes:
