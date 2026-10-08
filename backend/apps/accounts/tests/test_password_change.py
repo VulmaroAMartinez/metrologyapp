@@ -9,7 +9,8 @@ from .factories import DEFAULT_PASSWORD, UsuarioFactory
 
 pytestmark = [pytest.mark.django_db, pytest.mark.urls("apps.accounts.tests.urls_probe")]
 
-PROBE = "/api/v1/probe/"
+PROBE = "/api/v1/probe/consultar/"
+SIN_PERMISOS = "/api/v1/probe/sin-permisos/"
 NUEVA = "tornillo-azul-77-nube"
 
 
@@ -50,8 +51,17 @@ def test_user_without_pending_change_reaches_protected_endpoints(api, usuario):
     assert api.get(PROBE).status_code == 200
 
 
-def test_protected_endpoints_default_to_requiring_a_session(api):
+def test_protected_endpoints_require_a_session(api):
     assert api.get(PROBE).status_code == 401
+
+
+def test_a_view_without_declared_permissions_is_denied_even_with_a_valid_session(api, usuario):
+    api.login(usuario.correo)
+
+    respuesta = api.get(SIN_PERMISOS)
+
+    assert respuesta.status_code == 403
+    assert respuesta.json()["codigo"] == "permiso_denegado"
 
 
 def test_changing_the_password_lifts_the_block(api, forzado):

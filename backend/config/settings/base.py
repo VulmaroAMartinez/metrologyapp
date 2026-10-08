@@ -117,13 +117,12 @@ USE_TZ = True
 REST_FRAMEWORK = {
     # Cuántos proxies hay delante (Caddy = 1) para leer la IP real en X-Forwarded-For.
     "NUM_PROXIES": env.int("API_NUM_PROXIES", default=1),
-    # Cerrado por defecto: toda vista nueva exige sesión y contraseña vigente; las públicas
-    # (health, csrf, login, logout) lo declaran explícitamente. Los roles llegan en el commit 7.
+    # Cerrado por defecto: una vista que no declara sus permisos se deniega. Toda vista declara
+    # explícitamente `AllowAny` (pública), `IsAuthenticated` (cualquier rol, sin comprobar el
+    # cambio de contraseña pendiente) o `requiere(Accion.X)` (apps/accounts/permissions.py).
     "DEFAULT_AUTHENTICATION_CLASSES": ["apps.accounts.authentication.StrictSessionAuthentication"],
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
-        "apps.accounts.permissions.PasswordChangeNotRequired",
-    ],
+    "DEFAULT_PERMISSION_CLASSES": ["apps.accounts.permissions.DenegarPorDefecto"],
+    "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }

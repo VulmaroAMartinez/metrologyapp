@@ -38,6 +38,16 @@ class Api:
             path, data or {}, content_type="application/json", **headers, **extra
         )
 
+    def call(self, metodo, path, data=None, *, csrf=True, **extra):
+        """Cualquier método con CSRF válido (GET no lo necesita)."""
+        if csrf and self.token is None:
+            self.csrf()
+        headers = {"HTTP_X_CSRFTOKEN": self.token} if csrf else {}
+        enviar = getattr(self.client, metodo.lower())
+        if metodo.upper() == "GET":
+            return enviar(path, **headers, **extra)
+        return enviar(path, data or {}, content_type="application/json", **headers, **extra)
+
     def login(self, correo, contrasena=DEFAULT_PASSWORD, **extra):
         response = self.post(LOGIN, {"correo": correo, "contrasena": contrasena}, **extra)
         if response.status_code == 200:

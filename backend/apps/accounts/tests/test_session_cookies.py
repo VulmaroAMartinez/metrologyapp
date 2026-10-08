@@ -101,12 +101,14 @@ def test_prod_cookies_are_secure_host_prefixed_and_host_compatible():
 def test_csrf_is_required_for_unsafe_endpoints(api, usuario, ruta, cuerpo):
     anonimo = api.post(ruta, cuerpo, csrf=False)
     assert anonimo.status_code == 403
-    assert "CSRF" in anonimo.json()["detail"]
+    assert anonimo.json()["codigo"] == "csrf_invalido"
+    assert "CSRF" in anonimo.json()["detalle"]
 
     api.login(usuario.correo)
     autenticado = api.post(ruta, cuerpo, csrf=False)
     assert autenticado.status_code == 403
-    assert "CSRF" in autenticado.json()["detail"]
+    assert autenticado.json()["codigo"] == "csrf_invalido"
+    assert "CSRF" in autenticado.json()["detalle"]
 
 
 def test_a_wrong_csrf_token_is_rejected(api):
