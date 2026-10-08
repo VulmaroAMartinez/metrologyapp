@@ -1,0 +1,8 @@
+title = "metrologyapp"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Plantilla sin secretos reales"
+paths = ['''\.env\.example$''']
