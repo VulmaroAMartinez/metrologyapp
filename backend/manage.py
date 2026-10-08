@@ -5,7 +5,9 @@ import sys
 
 def main() -> None:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.dev")
-    from django.core.management import execute_from_command_line
+    from django.core.management import (
+        execute_from_command_line,  # pyright: ignore[reportMissingImports]
+    )
 
     execute_from_command_line(sys.argv)
 

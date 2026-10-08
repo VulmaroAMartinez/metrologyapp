@@ -79,6 +79,7 @@ services:
     environment:
       <<: *migrator-env
       COVERAGE_FILE: /tmp/.coverage
+      APP_DB_PASSWORD: ${APP_PASSWORD:?Falta APP_PASSWORD en .env} # solo para probar los privilegios del rol app
     volumes:
       - ../.env.example:/app/.env.example:ro
     depends_on:
