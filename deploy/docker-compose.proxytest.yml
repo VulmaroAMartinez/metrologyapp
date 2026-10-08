@@ -1,0 +1,35 @@
+# Se suma a docker-compose.yml solo en `make test-proxy` (proyecto y volumen aparte).
+# Añade una API en modo producción para comprobar, a través de Caddy, que una cabecera
+# X-Forwarded-Proto falsificada no evita la redirección a HTTPS.
+services:
+  api-prod:
+    restart: "no"
+    build: {context: ../backend, target: runtime}
+    mem_limit: 768m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?}
+      DB_HOST: db
+      DB_NAME: ${DB_NAME}
+      DB_USER: app
+      DB_PASSWORD: ${APP_PASSWORD:?}
+    depends_on:
+      db: {condition: service_healthy}
+    read_only: true
+    tmpfs: ["/tmp"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/v1/health/', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [internal]
+
+  proxy:
+    volumes:
+      - ./proxytest.caddy:/etc/caddy/extra/proxytest.caddy:ro
+    depends_on:
+      api-prod: {condition: service_healthy}

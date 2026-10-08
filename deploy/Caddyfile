@@ -17,6 +17,10 @@
 
 	respond /healthz 200
 
+	# Gancho para pruebas: `make test-proxy` monta aquí una ruta extra hacia una API en modo
+	# producción. Sin archivos en esa carpeta no hace nada.
+	import /etc/caddy/extra/*
+
 	# Un solo origen: /api -> Django, el resto -> Next.js. Caddy fija
 	# X-Forwarded-For con la IP del cliente (descarta el que mande el cliente).
 	handle /api/* {

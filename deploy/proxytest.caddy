@@ -1,0 +1,5 @@
+# Solo para `make test-proxy`: una segunda API con settings.prod detrás del mismo Caddy.
+handle /prod-api/* {
+	uri strip_prefix /prod-api
+	reverse_proxy api-prod:8000
+}
