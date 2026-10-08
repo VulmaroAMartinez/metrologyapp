@@ -19,7 +19,6 @@ from django.db import OperationalError, transaction
 from django.db.models import Case, DateTimeField, F, Q, Value, When
 from django.db.models.lookups import GreaterThanOrEqual
 from django.utils import timezone
-from psycopg.errors import LockNotAvailable
 
 from apps.audit.models import TipoEvento
 from apps.audit.services import registrar_evento
@@ -30,6 +29,7 @@ from .models import Usuario
 logger = logging.getLogger(__name__)
 
 SESSION_BACKEND = "django.contrib.auth.backends.ModelBackend"
+SQLSTATE_LOCK_NOT_AVAILABLE = "55P03"  # PostgreSQL: lock_not_available
 
 
 class MotivoFallo(StrEnum):
@@ -100,18 +100,24 @@ def _evento_sesion_fallida(usuario, motivo: MotivoFallo, ip) -> None:
 
 
 def iniciar_sesion(request, correo: str, contrasena: str) -> ResultadoLogin:
-    # La fila queda bloqueada (FOR UPDATE NOWAIT) desde que se lee hasta que se registra el
+    # La fila queda bloqueada (FOR NO KEY UPDATE NOWAIT) desde que se lee hasta que se registra el
     # resultado, así ninguna ráfaga en paralelo pasa la comprobación de "no bloqueado" antes de
     # que se registre un fallo. NOWAIT: quien no obtiene el candado NO espera (no se pueden
     # saturar workers contra una cuenta) y se rechaza tras la misma verificación de hash que
     # cualquier otro fallo, para que el tiempo no delate que la cuenta existe.
+    # NO KEY UPDATE y no UPDATE: el evento del intento rechazado inserta una fila con llave
+    # foránea a este usuario (FOR KEY SHARE), y FOR UPDATE la haría esperar al otro intento.
     # El contador, la sesión y el evento se confirman juntos, también en un fallo (401).
     correo = correo.strip().lower()
     ip = client_ip(request) if request is not None else None
     usuario = None
     try:
         with transaction.atomic():
-            usuario = Usuario.objects.select_for_update(nowait=True).filter(correo=correo).first()
+            usuario = (
+                Usuario.objects.select_for_update(nowait=True, no_key=True)
+                .filter(correo=correo)
+                .first()
+            )
             ahora = timezone.now()  # tras obtener el candado
             motivo = _motivo_no_elegible(usuario, ahora)
 
@@ -143,7 +149,9 @@ def iniciar_sesion(request, correo: str, contrasena: str) -> ResultadoLogin:
                         ip=ip,
                     )
     except OperationalError as error:
-        if not isinstance(error.__cause__, LockNotAvailable):
+        # Solo "candado no disponible" (SQLSTATE 55P03, el NOWAIT de arriba). Cualquier otro
+        # error de base de datos (caída, deadlock, timeout, permisos...) se propaga.
+        if getattr(error.__cause__, "sqlstate", None) != SQLSTATE_LOCK_NOT_AVAILABLE:
             raise
         check_password(contrasena, dummy_hash())
         motivo = MotivoFallo.INTENTO_SIMULTANEO
