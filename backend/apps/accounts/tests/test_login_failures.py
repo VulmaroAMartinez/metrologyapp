@@ -1,4 +1,5 @@
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from unittest import mock
@@ -197,6 +198,41 @@ def test_failure_counter_is_atomic_across_connections(settings):
 
     usuario.refresh_from_db()
     assert usuario.intentos_fallidos == 30
+
+
+@pytest.mark.django_db(transaction=True)
+def test_parallel_guesses_cannot_exceed_the_lock_threshold():
+    """Ráfaga de 12 intentos simultáneos contra la misma cuenta (umbral: 5).
+
+    La verificación se alarga 0,2 s para que todos coincidan. Con lectura sin bloqueo, los 12
+    comprobarían "no bloqueado" antes de que el primero registrara un fallo y los 12 probarían
+    la contraseña real; con la fila bloqueada, solo 5 llegan a probarla y el resto ya ve el bloqueo.
+    """
+    usuario = UsuarioFactory(correo=CORREO)
+    contra_hash_real = []
+    real = services.check_password
+
+    def lenta(contrasena, encoded):
+        time.sleep(0.2)
+        if encoded == usuario.password:
+            contra_hash_real.append(1)
+        return real(contrasena, encoded)
+
+    def intento(_):
+        try:
+            return services.iniciar_sesion(None, CORREO, "mal-intento-1").motivo
+        finally:
+            connection.close()
+
+    with mock.patch.object(services, "check_password", side_effect=lenta):
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            motivos = list(pool.map(intento, range(12)))
+
+    usuario.refresh_from_db()
+    assert len(contra_hash_real) == 5
+    assert motivos.count(services.MotivoFallo.CONTRASENA_INCORRECTA) == 5
+    assert motivos.count(services.MotivoFallo.BLOQUEADO) == 7
+    assert usuario.bloqueado_hasta is not None
 
 
 # --- límite de tasa ---------------------------------------------------------------------

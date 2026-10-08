@@ -71,25 +71,31 @@ def _motivo_no_elegible(usuario, ahora) -> MotivoFallo | None:
 
 
 def iniciar_sesion(request, correo: str, contrasena: str) -> ResultadoLogin:
-    ahora = timezone.now()
-    usuario = Usuario.objects.filter(correo=correo.strip().lower()).first()
-    motivo = _motivo_no_elegible(usuario, ahora)
+    # La fila queda bloqueada (FOR UPDATE) desde que se lee hasta que se registra el resultado:
+    # los intentos simultáneos contra la misma cuenta se serializan y cada uno ve el bloqueo
+    # que dejó el anterior. Sin esto, una ráfaga en paralelo pasaría la comprobación de
+    # "no bloqueado" antes de que se registrara ningún fallo y superaría el umbral.
+    with transaction.atomic():
+        usuario = Usuario.objects.select_for_update().filter(correo=correo.strip().lower()).first()
+        ahora = timezone.now()  # después de obtener el bloqueo: la espera no deja la hora vieja
+        motivo = _motivo_no_elegible(usuario, ahora)
 
-    # Siempre exactamente una verificación de hash, exista o no el usuario, esté bloqueado o no.
-    encoded = dummy_hash() if motivo else usuario.password
-    contrasena_correcta = check_password(contrasena, encoded)
+        # Siempre exactamente una verificación de hash, exista o no el usuario, esté o no bloqueado.
+        encoded = dummy_hash() if motivo else usuario.password
+        contrasena_correcta = check_password(contrasena, encoded)
 
-    if motivo is None and not contrasena_correcta:
-        motivo = MotivoFallo.CONTRASENA_INCORRECTA
-        _registrar_fallo(usuario.pk, ahora)
+        if motivo is None and not contrasena_correcta:
+            motivo = MotivoFallo.CONTRASENA_INCORRECTA
+            _registrar_fallo(usuario.pk, ahora)
+        elif motivo is None:
+            Usuario.objects.filter(pk=usuario.pk).update(intentos_fallidos=0, bloqueado_hasta=None)
+            usuario.intentos_fallidos, usuario.bloqueado_hasta = 0, None
 
     if motivo is not None:
         logger.info("Inicio de sesión rechazado: motivo=%s", motivo.value)
         # HOOK evento: SESION_FALLIDA (también para correos inexistentes, sin guardar el correo).
         return ResultadoLogin(None, motivo)
 
-    Usuario.objects.filter(pk=usuario.pk).update(intentos_fallidos=0, bloqueado_hasta=None)
-    usuario.intentos_fallidos, usuario.bloqueado_hasta = 0, None
     login(request, usuario, backend=SESSION_BACKEND)  # rota la clave de sesión (anti fijación)
     # HOOK evento: SESION_INICIADA.
     return ResultadoLogin(usuario, None)
