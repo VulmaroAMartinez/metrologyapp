@@ -44,9 +44,27 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 MIDDLEWARE = [
+    "apps.core.middleware.TrustedProxyHeadersMiddleware",  # primero: sanea X-Forwarded-*
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
 ]
+
+# Redes desde las que se aceptan X-Forwarded-* (el proxy Caddy). Por defecto, rangos privados:
+# la API solo es alcanzable desde la red interna de Docker. En producción, acotar a su subred.
+TRUSTED_PROXY_CIDRS = env.list(
+    "TRUSTED_PROXY_CIDRS",
+    default=["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
+)
+
+# Caché compartida entre workers (tabla django_cache). Nunca LocMem: cada worker tendría
+# su propio contador y el límite de intentos se multiplicaría por el número de procesos.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "django_cache",
+        "OPTIONS": {"MAX_ENTRIES": 1_000_000, "CULL_FREQUENCY": 3},
+    }
+}
 
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
@@ -73,10 +91,9 @@ TIME_ZONE = "America/Mexico_City"
 USE_I18N = True
 USE_TZ = True
 
-# Cuántos proxies hay delante (Caddy = 1) para leer la IP real en X-Forwarded-For.
-NUM_PROXIES = env.int("API_NUM_PROXIES", default=1)
-
 REST_FRAMEWORK = {
+    # Cuántos proxies hay delante (Caddy = 1) para leer la IP real en X-Forwarded-For.
+    "NUM_PROXIES": env.int("API_NUM_PROXIES", default=1),
     # Autenticación y permisos reales llegan con el modelo de usuario (commits 4-7).
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": [],

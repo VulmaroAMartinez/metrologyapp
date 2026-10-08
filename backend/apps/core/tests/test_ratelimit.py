@@ -1,0 +1,62 @@
+from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+from django.db import connection
+
+from apps.core.ratelimit import check_rate
+
+pytestmark = pytest.mark.django_db
+
+
+def test_allows_exactly_limit_attempts_then_blocks(clock):
+    results = [check_rate("login", "k", limit=5) for _ in range(7)]
+
+    assert [r.allowed for r in results] == [True] * 5 + [False] * 2
+
+
+def test_blocked_result_reports_seconds_until_next_window(clock):
+    for _ in range(3):
+        check_rate("login", "k", limit=3)
+
+    blocked = check_rate("login", "k", limit=3)
+
+    assert blocked.allowed is False
+    assert blocked.retry_after == 30  # el reloj está en el segundo 30 del minuto
+
+
+def test_window_rolls_over(clock):
+    for _ in range(3):
+        check_rate("login", "k", limit=3)
+    assert not check_rate("login", "k", limit=3).allowed
+
+    clock.advance(seconds=31)
+
+    assert check_rate("login", "k", limit=3).allowed
+
+
+def test_identifiers_and_scopes_are_independent(clock):
+    for _ in range(3):
+        check_rate("login", "a", limit=3)
+
+    assert check_rate("login", "b", limit=3).allowed
+    assert check_rate("otro", "a", limit=3).allowed
+
+
+def test_zero_limit_always_blocks(clock):
+    assert not check_rate("login", "k", limit=0).allowed
+
+
+@pytest.mark.django_db(transaction=True)
+def test_counter_is_shared_and_atomic_across_connections():
+    """20 hilos (cada uno con su conexión, como los workers) compiten por 5 ranuras."""
+
+    def attempt(_):
+        try:
+            return check_rate("concurrent", "k", limit=5, window=3600).allowed
+        finally:
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        allowed = list(pool.map(attempt, range(20)))
+
+    assert allowed.count(True) == 5
