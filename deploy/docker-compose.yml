@@ -1,0 +1,103 @@
+# Desarrollo. Se invoca desde la raíz con `make up`, que pasa --env-file .env
+# (el compose vive en deploy/ y Compose no lee el .env de la raíz por sí solo).
+name: metrologia
+
+x-hardening: &hardening
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  db:
+    <<: *hardening
+    image: postgres:18.6-alpine3.23@sha256:885cf05d376c7cf27afef02073e6bdac3841252537f16e244fd1c1e6a7c99fb1
+    user: "70:70" # postgres (alpine); no arranca como root
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: ${DB_NAME:?Falta DB_NAME en .env}
+      MIGRATOR_PASSWORD: ${MIGRATOR_PASSWORD:?Falta MIGRATOR_PASSWORD en .env}
+      APP_PASSWORD: ${APP_PASSWORD:?Falta APP_PASSWORD en .env}
+    volumes:
+      - db_data:/var/lib/postgresql
+      - ./db/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+      - ./db/init.sql:/opt/db/init.sql:ro
+    # Sin `ports`: la base de datos no se publica al host.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    tmpfs: ["/run/postgresql"]
+    networks: [internal]
+
+  api:
+    <<: *hardening
+    build: ../backend
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Falta DJANGO_SECRET_KEY en .env}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      API_NUM_PROXIES: ${API_NUM_PROXIES:-1}
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME}
+      DB_USER: app
+      DB_PASSWORD: ${APP_PASSWORD}
+    depends_on:
+      db: {condition: service_healthy}
+    read_only: true
+    tmpfs: ["/tmp"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/v1/health/', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [internal]
+
+  web:
+    <<: *hardening
+    build: ../frontend
+    depends_on:
+      api: {condition: service_healthy}
+    read_only: true
+    tmpfs: ["/tmp"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [internal]
+
+  proxy:
+    <<: *hardening
+    image: caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    user: "10001:10001" # Caddy escucha en 8080 (sin privilegios)
+    environment:
+      CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-8080}:8080" # único puerto publicado, solo loopback
+    depends_on:
+      api: {condition: service_healthy}
+      web: {condition: service_healthy}
+    read_only: true
+    tmpfs:
+      - /data:uid=10001,gid=10001
+      - /config:uid=10001,gid=10001
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [internal]
+
+networks:
+  internal: {}
+
+volumes:
+  db_data: {}

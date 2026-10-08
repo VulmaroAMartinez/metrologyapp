@@ -1,3 +1,4 @@
+# El compose vive en deploy/: Compose no lee el .env de la raíz, por eso --env-file explícito.
 COMPOSE := docker compose -f deploy/docker-compose.yml --env-file .env
 
 .PHONY: help up down logs test lint ci secrets
@@ -22,7 +23,8 @@ secrets: ## Escaneo de secretos en el repo
 test: ## Pruebas (backend + frontend)
 	@echo "Sin pruebas todavía"
 
-lint: ## Formato y linter
-	@echo "Sin linters todavía"
+lint: ## Valida compose y Caddyfile (se amplía con backend y frontend)
+	docker compose -f deploy/docker-compose.yml --env-file .env.example config -q
+	docker run --rm --env-file .env.example -v "$(CURDIR)/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.11.7-alpine caddy validate --config //etc/caddy/Caddyfile
 
 ci: lint test secrets ## Todo lo anterior; falla ante cualquier problema
