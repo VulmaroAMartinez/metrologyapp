@@ -13,10 +13,34 @@ SECRET_KEY = env("DJANGO_SECRET_KEY")
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
+# Sin django.contrib.admin en la v1 (ver docs/decisiones.md).
 INSTALLED_APPS = [
+    "django.contrib.contenttypes",
+    "django.contrib.auth",
+    "django.contrib.sessions",
     "rest_framework",
     "drf_spectacular",
     "apps.core",
+    "apps.accounts",
+]
+
+# Debe estar definido antes de la primera migración.
+AUTH_USER_MODEL = "accounts.Usuario"
+
+# Solo Argon2 (Django usa su parametrización por defecto).
+PASSWORD_HASHERS = ["django.contrib.auth.hashers.Argon2PasswordHasher"]
+
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+        "OPTIONS": {"user_attributes": ("nombre", "correo")},
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": env.int("PASSWORD_MIN_LENGTH", default=10)},
+    },
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
 MIDDLEWARE = [
@@ -75,4 +99,6 @@ LOGGING = {
     "disable_existing_loggers": False,
     "handlers": {"console": {"class": "logging.StreamHandler"}},
     "root": {"handlers": ["console"], "level": "INFO"},
+    # El SQL con parámetros incluiría hashes de contraseña.
+    "loggers": {"django.db.backends": {"level": "INFO"}},
 }

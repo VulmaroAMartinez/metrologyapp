@@ -10,9 +10,9 @@ select = ["E", "F", "I", "B", "UP", "S", "DJ", "T20"]
 "**/tests/**" = ["S101", "S105", "S106"]
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings.dev"
+DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["test_*.py"]
-addopts = "-p no:cacheprovider --cov=apps --cov=config --cov-report=term-missing --cov-fail-under=85"
+addopts = "--ds=config.settings.test -p no:cacheprovider --cov=apps --cov=config --cov-report=term-missing --cov-fail-under=85"
 
 [tool.coverage.run]
 omit = ["*/tests/*", "config/wsgi.py"]
