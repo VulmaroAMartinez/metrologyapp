@@ -35,6 +35,10 @@ services:
   api:
     <<: *hardening
     build: {context: ../backend, target: runtime}
+    # Argon2 usa ~100 MiB por verificación; 3 workers + base de Python (ver docs/decisiones.md).
+    mem_limit: 768m
+    memswap_limit: 768m
+    pids_limit: 256
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.dev
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Falta DJANGO_SECRET_KEY en .env}
