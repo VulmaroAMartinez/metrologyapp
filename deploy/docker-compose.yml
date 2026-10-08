@@ -34,7 +34,7 @@ services:
 
   api:
     <<: *hardening
-    build: ../backend
+    build: {context: ../backend, target: runtime}
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.dev
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Falta DJANGO_SECRET_KEY en .env}
@@ -55,6 +55,36 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    networks: [internal]
+
+  # Herramientas puntuales (perfil `tools`): corren con el rol `migrator`, nunca con `app`.
+  migrate:
+    profiles: [tools]
+    build: {context: ../backend, target: runtime}
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    environment: &migrator-env
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Falta DJANGO_SECRET_KEY en .env}
+      DB_HOST: db
+      DB_NAME: ${DB_NAME}
+      DB_USER: migrator
+      DB_PASSWORD: ${MIGRATOR_PASSWORD:?Falta MIGRATOR_PASSWORD en .env}
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [internal]
+
+  test:
+    profiles: [tools]
+    build: {context: ../backend, target: test}
+    environment:
+      <<: *migrator-env
+      COVERAGE_FILE: /tmp/.coverage
+    volumes:
+      - ../.env.example:/app/.env.example:ro
+    depends_on:
+      db: {condition: service_healthy}
+    read_only: true
+    tmpfs: ["/tmp"]
     networks: [internal]
 
   web:

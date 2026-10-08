@@ -1,0 +1,9 @@
+# Dependencias directas de ejecución. Se bloquean con `make lock` (requirements.txt, con hashes).
+Django>=5.2,<5.3
+djangorestframework
+drf-spectacular
+argon2-cffi
+psycopg[binary]
+gunicorn
+django-environ
+tzdata
