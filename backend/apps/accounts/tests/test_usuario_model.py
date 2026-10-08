@@ -33,7 +33,7 @@ def test_defaults():
     assert usuario.intentos_fallidos == 0
     assert usuario.bloqueado_hasta is None
     assert usuario.debe_cambiar_contrasena is False
-    assert usuario.numero_nomina == ""
+    assert usuario.numero_nomina is None
     assert timezone.is_aware(usuario.creado_en)
 
 
@@ -139,3 +139,53 @@ def test_factory_builds_valid_users():
 
 def test_models_have_no_pending_migrations():
     call_command("makemigrations", check=True, dry_run=True, verbosity=0)
+
+
+# --- numero_nomina: NULL si no existe, único si tiene valor ---------------------------------
+
+
+def test_users_without_nomina_are_allowed_many_times():
+    make(correo="a@e.test")
+    make(correo="b@e.test")
+    make(correo="c@e.test", numero_nomina=None)
+
+    assert Usuario.objects.filter(numero_nomina__isnull=True).count() == 3
+
+
+@pytest.mark.parametrize("vacio", ["", "   ", None])
+def test_blank_nomina_is_stored_as_null(vacio):
+    usuario = make(numero_nomina=vacio)
+    usuario.refresh_from_db()
+
+    assert usuario.numero_nomina is None
+
+
+def test_nomina_is_stripped():
+    assert make(numero_nomina=" 12345 ").numero_nomina == "12345"
+
+
+def test_nomina_must_be_unique_when_present():
+    make(correo="a@e.test", numero_nomina="12345")
+
+    with pytest.raises(IntegrityError, match="usuario_nomina_unica"), transaction.atomic():
+        make(correo="b@e.test", numero_nomina="12345")
+
+
+def test_nomina_unique_constraint_also_stops_bulk_inserts_of_empty_strings():
+    # Un "" que llegue sin pasar por save() no es NULL: la restricción lo trata como valor.
+    Usuario.objects.bulk_create(
+        [Usuario(correo="a@e.test", nombre="A", rol="ADMIN", numero_nomina="")]
+    )
+
+    with pytest.raises(IntegrityError, match="usuario_nomina_unica"), transaction.atomic():
+        Usuario.objects.bulk_create(
+            [Usuario(correo="b@e.test", nombre="B", rol="ADMIN", numero_nomina="")]
+        )
+
+
+def test_nomina_can_be_reused_after_it_is_cleared():
+    primero = make(correo="a@e.test", numero_nomina="777")
+    primero.numero_nomina = None
+    primero.save()
+
+    assert make(correo="b@e.test", numero_nomina="777").numero_nomina == "777"

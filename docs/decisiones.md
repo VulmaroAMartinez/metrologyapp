@@ -26,7 +26,7 @@ Se completa al terminar el sprint. Los valores provisionales se listan para que 
 - Longitud mínima de contraseña: 10 (`PASSWORD_MIN_LENGTH`).
 
 ## Preguntas abiertas
-- `numero_nomina`: DEFINICION §5 lo lista en Usuario pero no dice si es obligatorio ni único. Queda **opcional y sin unicidad** (cadena vacía = sin número). Confirmar.
+- `numero_nomina`: DEFINICION §5 lo lista en Usuario pero no dice si es obligatorio. Queda **opcional**: `NULL` cuando no existe (nunca cadena vacía) y **único cuando tiene valor** (restricción parcial). Confirmar si debe ser obligatorio.
 
 ## Cambios que Vul debe hacer a docs/DEFINICION.md (archivo protegido)
 - (se irá llenando)

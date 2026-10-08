@@ -14,8 +14,8 @@ class Usuario(AbstractBaseUser):
         ESPECTADOR = "ESPECTADOR", "Espectador"
 
     nombre = models.CharField(max_length=150)
-    # Opcional y sin unicidad: DEFINICION §5 no define su obligatoriedad (ver decisiones.md).
-    numero_nomina = models.CharField(max_length=20, blank=True, default="")
+    # NULL cuando no existe (nunca ""); único cuando tiene valor. Obligatoriedad: ver decisiones.md.
+    numero_nomina = models.CharField(max_length=20, null=True, blank=True)  # noqa: DJ001
     correo = models.EmailField(max_length=254, unique=True)
     rol = models.CharField(max_length=10, choices=Rol.choices)
     activo = models.BooleanField(default=True)
@@ -33,6 +33,11 @@ class Usuario(AbstractBaseUser):
     class Meta:
         constraints = [
             models.UniqueConstraint(Lower("correo"), name="usuario_correo_unico_ci"),
+            models.UniqueConstraint(
+                fields=["numero_nomina"],
+                condition=models.Q(numero_nomina__isnull=False),
+                name="usuario_nomina_unica",
+            ),
             models.CheckConstraint(
                 condition=models.Q(rol__in=["ADMIN", "TECNICO", "ESPECTADOR"]),
                 name="usuario_rol_valido",
@@ -53,4 +58,5 @@ class Usuario(AbstractBaseUser):
 
     def save(self, *args, **kwargs):
         self.correo = self.correo.strip().lower()
+        self.numero_nomina = (self.numero_nomina or "").strip() or None
         super().save(*args, **kwargs)
