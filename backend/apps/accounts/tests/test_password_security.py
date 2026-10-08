@@ -57,6 +57,7 @@ def test_prod_settings_use_argon2():
         "DB_NAME": "x",
         "DB_USER": "app",
         "DB_PASSWORD": "una-clave-real",
+        "TRUSTED_PROXY_CIDRS": "172.28.0.0/24",
     }
     code = "from django.conf import settings; print(settings.PASSWORD_HASHERS)"
     result = subprocess.run(  # noqa: S603

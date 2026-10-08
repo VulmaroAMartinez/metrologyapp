@@ -1,10 +1,50 @@
+import ipaddress
+
 from django.core.exceptions import ImproperlyConfigured
 
 EXAMPLE_MARKER = "EJEMPLO"  # prefijo de todos los secretos de .env.example
 MIN_SECRET_KEY_LENGTH = 50
 
+# Valor por defecto (desarrollo): todos los rangos privados. Producción lo rechaza.
+DEFAULT_TRUSTED_PROXY_CIDRS = [
+    "127.0.0.0/8",
+    "::1/128",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+]
+# Redes de proxy más anchas que esto (IPv4 /16, IPv6 /64) dejan confiar en X-Forwarded-* a
+# cualquier máquina de la red. Una red de Docker típica es /16 o más estrecha.
+MIN_PREFIX_IPV4 = 16
+MIN_PREFIX_IPV6 = 64
 
-def validate_production(*, secret_key, db_password, allowed_hosts, debug):
+
+def _problemas_proxies(cidrs):
+    limpios = [c.strip() for c in cidrs if c.strip()]
+    if not limpios:
+        return ["TRUSTED_PROXY_CIDRS está vacío (se perdería la IP real de los clientes)"]
+    if sorted(limpios) == sorted(DEFAULT_TRUSTED_PROXY_CIDRS):
+        return [
+            "TRUSTED_PROXY_CIDRS conserva el valor por defecto (todos los rangos privados); "
+            "acótalo a la subred de Docker (docs/guia-instalacion.md)"
+        ]
+    problemas = []
+    for cidr in limpios:
+        try:
+            red = ipaddress.ip_network(cidr, strict=False)
+        except ValueError:
+            problemas.append(f"TRUSTED_PROXY_CIDRS contiene un CIDR inválido: {cidr!r}")
+            continue
+        minimo = MIN_PREFIX_IPV4 if red.version == 4 else MIN_PREFIX_IPV6
+        if red.prefixlen < minimo:
+            problemas.append(
+                f"TRUSTED_PROXY_CIDRS: {cidr} es demasiado amplio (máximo /{minimo}); "
+                "acótalo a la subred de Docker (docs/guia-instalacion.md)"
+            )
+    return problemas
+
+
+def validate_production(*, secret_key, db_password, allowed_hosts, debug, trusted_proxy_cidrs):
     """Niega el arranque con configuración de ejemplo o insegura."""
     problems = []
     if debug:
@@ -17,5 +57,6 @@ def validate_production(*, secret_key, db_password, allowed_hosts, debug):
         problems.append(f"DJANGO_SECRET_KEY tiene menos de {MIN_SECRET_KEY_LENGTH} caracteres")
     if db_password.startswith(EXAMPLE_MARKER):
         problems.append("DB_PASSWORD es el valor de ejemplo de .env.example")
+    problems += _problemas_proxies(trusted_proxy_cidrs)
     if problems:
         raise ImproperlyConfigured("Configuración de producción rechazada: " + "; ".join(problems))

@@ -4,6 +4,8 @@ from pathlib import Path
 
 import environ
 
+from .guards import DEFAULT_TRUSTED_PROXY_CIDRS
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 env = environ.Env()
@@ -75,10 +77,7 @@ LOGIN_RATE_PER_IP = env.int("LOGIN_RATE_PER_IP", default=20)  # por minuto
 
 # Redes desde las que se aceptan X-Forwarded-* (el proxy Caddy). Por defecto, rangos privados:
 # la API solo es alcanzable desde la red interna de Docker. En producción, acotar a su subred.
-TRUSTED_PROXY_CIDRS = env.list(
-    "TRUSTED_PROXY_CIDRS",
-    default=["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
-)
+TRUSTED_PROXY_CIDRS = env.list("TRUSTED_PROXY_CIDRS", default=DEFAULT_TRUSTED_PROXY_CIDRS)
 
 # Caché compartida entre workers (tabla django_cache). Nunca LocMem: cada worker tendría
 # su propio contador y el límite de intentos se multiplicaría por el número de procesos.

@@ -6,6 +6,7 @@ validate_production(
     db_password=DATABASES["default"]["PASSWORD"],  # noqa: F405
     allowed_hosts=ALLOWED_HOSTS,  # noqa: F405
     debug=DEBUG,  # noqa: F405
+    trusted_proxy_cidrs=TRUSTED_PROXY_CIDRS,  # noqa: F405
 )
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

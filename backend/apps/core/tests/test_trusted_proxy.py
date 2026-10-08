@@ -92,6 +92,7 @@ def cache_backend_of(module):
         "DB_NAME": "x",
         "DB_USER": "app",
         "DB_PASSWORD": "una-clave-real",
+        "TRUSTED_PROXY_CIDRS": "172.28.0.0/24",
     }
     code = "from django.conf import settings; import json; print(json.dumps(settings.CACHES))"
     result = subprocess.run(  # noqa: S603

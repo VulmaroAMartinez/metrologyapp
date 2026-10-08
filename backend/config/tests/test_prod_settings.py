@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
-from config.settings.guards import validate_production
+from config.settings.guards import DEFAULT_TRUSTED_PROXY_CIDRS, validate_production
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 ENV_EXAMPLE = Path("/app/.env.example")  # montado por el servicio `test` del compose
@@ -18,6 +18,7 @@ GOOD_ENV = {
     "DB_NAME": "x",
     "DB_USER": "app",
     "DB_PASSWORD": "una-clave-real-de-base-de-datos",
+    "TRUSTED_PROXY_CIDRS": "172.28.0.0/24",
 }
 
 
@@ -50,6 +51,7 @@ def good_args(**overrides):
         "db_password": "clave-real",
         "allowed_hosts": ["a.example.com"],
         "debug": False,
+        "trusted_proxy_cidrs": ["172.28.0.0/24"],
         **overrides,
     }
 
@@ -74,6 +76,43 @@ def test_validator_rejects_insecure_values(override, expected):
         validate_production(**good_args(**override))
 
 
+@pytest.mark.parametrize(
+    ("cidrs", "fragmento"),
+    [
+        (DEFAULT_TRUSTED_PROXY_CIDRS, "valor por defecto"),
+        (list(reversed(DEFAULT_TRUSTED_PROXY_CIDRS)), "valor por defecto"),
+        (["10.0.0.0/8"], "demasiado amplio"),
+        (["172.16.0.0/12"], "demasiado amplio"),
+        (["172.28.0.0/24", "10.0.0.0/8"], "10.0.0.0/8"),
+        (["0.0.0.0/0"], "demasiado amplio"),
+        (["::/0"], "demasiado amplio"),
+        (["2001:db8::/32"], "demasiado amplio"),
+        (["no-es-un-cidr"], "inválido"),
+        ([], "vacío"),
+        (["", "  "], "vacío"),
+    ],
+)
+def test_validator_rejects_broad_empty_or_invalid_trusted_proxies(cidrs, fragmento):
+    with pytest.raises(ImproperlyConfigured, match="TRUSTED_PROXY_CIDRS") as error:
+        validate_production(**good_args(trusted_proxy_cidrs=cidrs))
+
+    assert fragmento in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "cidrs",
+    [
+        ["172.28.0.0/24"],
+        ["172.18.0.0/16"],
+        ["127.0.0.1/32"],
+        ["fd00::/64"],
+        ["172.28.0.0/24", "::1/128"],
+    ],
+)
+def test_validator_accepts_narrow_trusted_proxies(cidrs):
+    validate_production(**good_args(trusted_proxy_cidrs=cidrs))
+
+
 def test_validator_reports_every_problem():
     with pytest.raises(ImproperlyConfigured) as error:
         validate_production(**good_args(debug=True, allowed_hosts=[]))
@@ -87,6 +126,8 @@ def test_validator_reports_every_problem():
         ({"DJANGO_ALLOWED_HOSTS": ""}, "ALLOWED_HOSTS"),
         ({"DJANGO_SECRET_KEY": "EJEMPLO-cambia-esta-clave-larga-y-aleatoria"}, "SECRET_KEY"),
         ({"DB_PASSWORD": "EJEMPLO-cambia-app"}, "DB_PASSWORD"),
+        ({"TRUSTED_PROXY_CIDRS": "10.0.0.0/8,172.16.0.0/12"}, "TRUSTED_PROXY_CIDRS"),
+        ({"TRUSTED_PROXY_CIDRS": ""}, "TRUSTED_PROXY_CIDRS"),
     ],
 )
 def test_prod_refuses_to_start(overrides, expected):
@@ -130,11 +171,19 @@ PROD_REQUESTS = """
 import django
 django.setup()
 from django.test import Client
-client = Client(HTTP_HOST="metrologia.example.com", HTTP_X_FORWARDED_PROTO="https")
+# El proxy (Caddy) está dentro de TRUSTED_PROXY_CIDRS (172.28.0.0/24).
+client = Client(
+    HTTP_HOST="metrologia.example.com", REMOTE_ADDR="172.28.0.5", HTTP_X_FORWARDED_PROTO="https"
+)
 print(client.get("/api/v1/schema/").status_code)
 internal = Client(HTTP_HOST="metrologia.example.com")  # sin cabecera de proxy: healthcheck interno
 print(internal.get("/api/v1/health/").status_code)
 print(internal.get("/api/v1/schema/").status_code)
+# Un cliente fuera de la red de confianza no puede declarar HTTPS con la cabecera.
+forged = Client(
+    HTTP_HOST="metrologia.example.com", REMOTE_ADDR="203.0.113.9", HTTP_X_FORWARDED_PROTO="https"
+)
+print(forged.get("/api/v1/schema/").status_code)
 """
 
 
@@ -148,7 +197,37 @@ def test_prod_hides_schema_and_exempts_health_from_https_redirect():
         check=False,
     )
 
-    schema_https, health_http, schema_http = result.stdout.split()
+    schema_https, health_http, schema_http, schema_forged = result.stdout.split()
     assert schema_https == "404"
     assert health_http in {"200", "503"}  # nunca 301: el healthcheck no sigue redirecciones
     assert schema_http == "301"
+    assert schema_forged == "301"  # cabecera falsificada desde fuera de los proxies de confianza
+
+
+def test_prod_refuses_to_start_when_trusted_proxies_are_left_at_the_default():
+    # Sin la variable, base.py usa el valor por defecto de desarrollo (todos los rangos privados).
+    env = {k: v for k, v in GOOD_ENV.items() if k != "TRUSTED_PROXY_CIDRS"}
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", "import config.settings.prod"],
+        cwd=BACKEND_DIR,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "valor por defecto" in result.stderr
+
+
+def test_the_env_example_value_is_rejected_by_prod():
+    ejemplo = load_env_example()["TRUSTED_PROXY_CIDRS"]
+
+    result = import_prod(TRUSTED_PROXY_CIDRS=ejemplo)
+
+    assert result.returncode != 0
+    assert "TRUSTED_PROXY_CIDRS" in result.stderr
+
+
+def test_a_docker_subnet_is_accepted_by_prod():
+    assert import_prod(TRUSTED_PROXY_CIDRS="172.28.0.0/24").returncode == 0

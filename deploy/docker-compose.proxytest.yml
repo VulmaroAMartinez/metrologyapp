@@ -16,6 +16,8 @@ services:
       DB_NAME: ${DB_NAME}
       DB_USER: app
       DB_PASSWORD: ${APP_PASSWORD:?}
+      # Producción exige acotar los proxies de confianza: la subred fija de abajo.
+      TRUSTED_PROXY_CIDRS: 172.29.250.0/24
     depends_on:
       db: {condition: service_healthy}
     read_only: true
@@ -33,3 +35,9 @@ services:
       - ./proxytest.caddy:/etc/caddy/extra/proxytest.caddy:ro
     depends_on:
       api-prod: {condition: service_healthy}
+
+networks:
+  internal:
+    ipam:
+      config:
+        - subnet: 172.29.250.0/24

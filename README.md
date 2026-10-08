@@ -70,4 +70,5 @@ prueba: `docker compose -f deploy/docker-compose.yml --env-file .env --profile t
 
 `config.settings.prod` se niega a arrancar si: `DJANGO_DEBUG` está activo, `DJANGO_ALLOWED_HOSTS` está vacío,
 `DJANGO_SECRET_KEY` o `DB_PASSWORD` conservan el valor de ejemplo (prefijo `EJEMPLO`) o la clave
-secreta tiene menos de 50 caracteres. El esquema OpenAPI (`/api/v1/schema/`) no se sirve en producción.
+secreta tiene menos de 50 caracteres, o si `TRUSTED_PROXY_CIDRS` es demasiado amplio (ver
+`docs/guia-instalacion.md`). El esquema OpenAPI (`/api/v1/schema/`) no se sirve en producción.
