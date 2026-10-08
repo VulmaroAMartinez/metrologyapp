@@ -17,3 +17,6 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
+# Prefijo __Host-: el navegador solo lo acepta con Secure, Path=/ y sin Domain (así se configura).
+SESSION_COOKIE_NAME = "__Host-sessionid"
+CSRF_COOKIE_NAME = "__Host-csrftoken"

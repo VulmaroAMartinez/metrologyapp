@@ -56,6 +56,14 @@ Para cambiarlas:
 Si el nombre de la base no es `metrologia`, cambia `-d metrologia` por el valor de `DB_NAME`.
 (En desarrollo también puedes borrar el volumen con `docker compose ... down -v` y recrear todo; **se pierden los datos**.)
 
+## Autenticación (API)
+
+Sesión por cookie bajo `/api/v1/auth/`: `GET csrf/` (token), `POST login/`, `POST logout/`, `GET me/`
+y `POST cambiar-contrasena/`. Todo `POST` lleva la cabecera `X-CSRFToken` con el token de `csrf/`
+(que cambia al iniciar sesión). Los valores de bloqueo, límite de tasa e inactividad son variables
+de `.env` (ver `.env.example` y `docs/decisiones.md`). Con el stack arriba puedes crear un usuario de
+prueba: `docker compose -f deploy/docker-compose.yml --env-file .env --profile tools run --rm migrate python manage.py shell`.
+
 ## Producción
 
 `config.settings.prod` se niega a arrancar si: `DJANGO_DEBUG` está activo, `DJANGO_ALLOWED_HOSTS` está vacío,

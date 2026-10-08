@@ -46,8 +46,31 @@ AUTH_PASSWORD_VALIDATORS = [
 MIDDLEWARE = [
     "apps.core.middleware.TrustedProxyHeadersMiddleware",  # primero: sanea X-Forwarded-*
     "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
 ]
+
+# --- Sesión y CSRF --------------------------------------------------------------------------
+# Sesión en base de datos: cerrar sesión la borra en el servidor. La ventana es deslizante
+# (se renueva con cada petición), así que SESSION_IDLE_MINUTES es inactividad, no duración.
+SESSION_IDLE_MINUTES = env.int("SESSION_IDLE_MINUTES", default=30)
+SESSION_COOKIE_AGE = SESSION_IDLE_MINUTES * 60
+SESSION_SAVE_EVERY_REQUEST = True
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+# El token CSRF se entrega por /auth/csrf/; la cookie no necesita ser legible desde JS.
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+# CORS cerrado: no se instala django-cors-headers; el frontend usa el mismo origen (Caddy).
+
+# --- Inicio de sesión: bloqueo y límite de tasa (valores provisionales, ver decisiones.md) ---
+LOGIN_MAX_FAILED_ATTEMPTS = env.int("LOGIN_MAX_FAILED_ATTEMPTS", default=5)
+LOGIN_LOCKOUT_MINUTES = env.int("LOGIN_LOCKOUT_MINUTES", default=15)
+LOGIN_RATE_PER_IP_EMAIL = env.int("LOGIN_RATE_PER_IP_EMAIL", default=5)  # por minuto
+LOGIN_RATE_PER_IP = env.int("LOGIN_RATE_PER_IP", default=20)  # por minuto
 
 # Redes desde las que se aceptan X-Forwarded-* (el proxy Caddy). Por defecto, rangos privados:
 # la API solo es alcanzable desde la red interna de Docker. En producción, acotar a su subred.
@@ -94,10 +117,13 @@ USE_TZ = True
 REST_FRAMEWORK = {
     # Cuántos proxies hay delante (Caddy = 1) para leer la IP real en X-Forwarded-For.
     "NUM_PROXIES": env.int("API_NUM_PROXIES", default=1),
-    # Autenticación y permisos reales llegan con el modelo de usuario (commits 4-7).
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
-    "DEFAULT_PERMISSION_CLASSES": [],
-    "UNAUTHENTICATED_USER": None,
+    # Cerrado por defecto: toda vista nueva exige sesión y contraseña vigente; las públicas
+    # (health, csrf, login, logout) lo declaran explícitamente. Los roles llegan en el commit 7.
+    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.accounts.authentication.StrictSessionAuthentication"],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+        "apps.accounts.permissions.PasswordChangeNotRequired",
+    ],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
