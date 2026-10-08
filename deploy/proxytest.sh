@@ -26,7 +26,7 @@ cleanup() {
 trap cleanup EXIT
 
 $COMPOSE up -d --build --wait db
-$COMPOSE --profile tools run --rm migrate
+$COMPOSE --profile tools run --rm --build migrate
 $COMPOSE up -d --build --wait
-$COMPOSE --profile tools run --rm --no-deps -e PROXY_BASE_URL=http://proxy:8080 test \
+$COMPOSE --profile tools run --rm --build --no-deps -e PROXY_BASE_URL=http://proxy:8080 test \
   pytest --ds=config.settings.test -p no:cacheprovider -o addopts="" -v proxytests

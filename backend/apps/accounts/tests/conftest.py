@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 import pytest
 from django.test import Client
+from django.utils import timezone
 
 from apps.accounts.models import Usuario
 
@@ -62,3 +65,25 @@ def relaxed_rate(settings):
     """Quita el límite de tasa para probar bloqueo y respuestas sin que estorbe el 429."""
     settings.LOGIN_RATE_PER_IP_EMAIL = 1000
     settings.LOGIN_RATE_PER_IP = 1000
+
+
+@pytest.fixture
+def cuentas(db):
+    """Un caso por cada razón por la que un login puede fallar."""
+    UsuarioFactory(correo="activo@empresa.test")
+    UsuarioFactory(correo="inactivo@empresa.test", activo=False)
+    UsuarioFactory(
+        correo="bloqueado@empresa.test", bloqueado_hasta=timezone.now() + timedelta(minutes=10)
+    )
+    sin_clave = UsuarioFactory(correo="sinclave@empresa.test")
+    sin_clave.set_unusable_password()
+    sin_clave.save()
+
+
+CASOS = {
+    "correo inexistente": ("nadie@empresa.test", DEFAULT_PASSWORD),
+    "contraseña incorrecta": ("activo@empresa.test", "otra-contrasena-1"),
+    "usuario inactivo": ("inactivo@empresa.test", DEFAULT_PASSWORD),
+    "cuenta bloqueada (contraseña correcta)": ("bloqueado@empresa.test", DEFAULT_PASSWORD),
+    "sin contraseña utilizable": ("sinclave@empresa.test", DEFAULT_PASSWORD),
+}

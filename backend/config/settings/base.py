@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "apps.core",
     "apps.accounts",
+    "apps.audit",
 ]
 
 # Debe estar definido antes de la primera migración.

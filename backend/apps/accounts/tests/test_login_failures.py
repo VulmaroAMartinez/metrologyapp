@@ -14,34 +14,12 @@ from apps.accounts import services
 from apps.accounts.models import Usuario
 from config.settings import base
 
-from .conftest import LOGIN, ME, Api
+from .conftest import CASOS, LOGIN, ME, Api
 from .factories import DEFAULT_PASSWORD, UsuarioFactory
 
 pytestmark = pytest.mark.django_db
 
 CORREO = "ana@empresa.test"
-
-
-@pytest.fixture
-def cuentas(db):
-    """Un caso por cada razón por la que un login puede fallar."""
-    UsuarioFactory(correo="activo@empresa.test")
-    UsuarioFactory(correo="inactivo@empresa.test", activo=False)
-    UsuarioFactory(
-        correo="bloqueado@empresa.test", bloqueado_hasta=timezone.now() + timedelta(minutes=10)
-    )
-    sin_clave = UsuarioFactory(correo="sinclave@empresa.test")
-    sin_clave.set_unusable_password()
-    sin_clave.save()
-
-
-CASOS = {
-    "correo inexistente": ("nadie@empresa.test", DEFAULT_PASSWORD),
-    "contraseña incorrecta": ("activo@empresa.test", "otra-contrasena-1"),
-    "usuario inactivo": ("inactivo@empresa.test", DEFAULT_PASSWORD),
-    "cuenta bloqueada (contraseña correcta)": ("bloqueado@empresa.test", DEFAULT_PASSWORD),
-    "sin contraseña utilizable": ("sinclave@empresa.test", DEFAULT_PASSWORD),
-}
 
 
 # --- respuesta idéntica ------------------------------------------------------------------
