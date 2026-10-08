@@ -35,6 +35,13 @@ REGISTRO = {
     "api/v1/auth/me/": ({"GET"}, AUTENTICADO),
     "api/v1/auth/cambiar-contrasena/": ({"POST"}, AUTENTICADO),
     "api/v1/health/": ({"GET"}, PUBLICO),
+    # Gestión de usuarios (commit 8): solo ADMIN.
+    "api/v1/usuarios/": ({"GET", "POST"}, "GESTIONAR_USUARIOS"),
+    "api/v1/usuarios/<int:pk>/": ({"GET", "PATCH"}, "GESTIONAR_USUARIOS"),
+    "api/v1/usuarios/<int:pk>/cambiar-rol/": ({"POST"}, "GESTIONAR_USUARIOS"),
+    "api/v1/usuarios/<int:pk>/desactivar/": ({"POST"}, "GESTIONAR_USUARIOS"),
+    "api/v1/usuarios/<int:pk>/reactivar/": ({"POST"}, "GESTIONAR_USUARIOS"),
+    "api/v1/usuarios/<int:pk>/restablecer-contrasena/": ({"POST"}, "GESTIONAR_USUARIOS"),
     "api/v1/schema/": ({"GET"}, PUBLICO),  # vista de Django (no DRF): solo se sirve en desarrollo
 }
 # Vistas que no son DRF y por tanto no pueden declarar permission_classes. Revisión manual.
@@ -146,7 +153,9 @@ def test_the_checker_flags_a_non_drf_view_that_is_not_allowed():
 
 def peticion(api, ruta, metodo):
     # login con cuerpo vacío -> 400 (validación) y cambiar-contrasena -> 400: no son 401/403.
-    return api.call(metodo, "/" + ruta)
+    # Las rutas con parámetro se prueban con un id inexistente: el permiso se evalúa antes de
+    # buscar el recurso, así que un rol sin permiso siempre recibe 403 (nunca 404).
+    return api.call(metodo, "/" + ruta.replace("<int:pk>", "987654"))
 
 
 def esperado(politica, rol):

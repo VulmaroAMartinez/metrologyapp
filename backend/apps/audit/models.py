@@ -35,6 +35,8 @@ class TipoEvento(models.TextChoices):
     # Agregados fuera de §6.9 (ver docs/decisiones.md)
     CUENTA_BLOQUEADA = "CUENTA_BLOQUEADA"
     USUARIO_CONTRASENA_CAMBIADA = "USUARIO_CONTRASENA_CAMBIADA"
+    USUARIO_EDITADO = "USUARIO_EDITADO"
+    USUARIO_REACTIVADO = "USUARIO_REACTIVADO"
 
 
 class EventoQuerySet(models.QuerySet):

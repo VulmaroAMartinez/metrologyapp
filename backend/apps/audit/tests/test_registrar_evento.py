@@ -91,6 +91,8 @@ def test_whitelisted_fields_are_accepted_and_dates_become_text():
         "contrasena",
         "contrasena_actual",
         "contrasena_nueva",
+        "contrasena_temporal",
+        "temporal",
         "password_hash",
         "hash",
         "token",
@@ -106,6 +108,21 @@ def test_forbidden_fields_are_rejected_and_nothing_is_written(campo, lado):
         registrar(**{lado: {"rol": "ADMIN", campo: "lo-que-sea"}})
 
     assert Evento.objects.count() == 0
+
+
+def test_user_management_fields_are_whitelisted_and_nothing_else():
+    evento = registrar(
+        despues={
+            "nombre": "Ana",
+            "correo": "ana@empresa.test",
+            "numero_nomina": "N-1",
+            "rol": "ADMIN",
+            "activo": True,
+        }
+    )
+
+    assert set(evento.despues) == {"nombre", "correo", "numero_nomina", "rol", "activo"}
+    assert {"nombre", "correo", "numero_nomina", "rol", "activo"} <= CAMPOS_PERMITIDOS
 
 
 def test_a_real_password_hash_cannot_be_smuggled_in():

@@ -33,3 +33,7 @@ backups/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Puntos de montaje vacíos que Docker crea al montar archivos sobre backend/
+backend/db/
+backend/.env.example

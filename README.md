@@ -64,6 +64,18 @@ y `POST cambiar-contrasena/`. Todo `POST` lleva la cabecera `X-CSRFToken` con el
 de `.env` (ver `.env.example` y `docs/decisiones.md`). Con el stack arriba puedes crear un usuario de
 prueba: `docker compose -f deploy/docker-compose.yml --env-file .env --profile tools run --rm migrate python manage.py shell`.
 
+## Primer administrador y gestión de usuarios
+
+```sh
+docker compose -f deploy/docker-compose.yml --env-file .env --profile tools run --rm migrate \
+  python manage.py crear_admin --correo admin@empresa.com --nombre "Nombre Apellido"
+```
+
+Pide la contraseña de forma interactiva (`CREAR_ADMIN_CONTRASENA` solo para instalaciones
+automatizadas) y obliga a cambiarla al primer inicio de sesión. Después, el administrador gestiona
+usuarios en `/api/v1/usuarios/`: la contraseña temporal de un usuario nuevo o restablecido se muestra
+**una sola vez** en la respuesta. No hay borrado ni desbloqueo manual de cuentas.
+
 ## Producción
 
 **El sistema se instala solo en red interna o VPN, nunca expuesto directo a internet** (el bloqueo de cuentas y el límite de tasa asumen un atacante con pocas IPs).

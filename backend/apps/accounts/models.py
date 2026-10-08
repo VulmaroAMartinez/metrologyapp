@@ -34,7 +34,7 @@ class Usuario(AbstractBaseUser):
         constraints = [
             models.UniqueConstraint(Lower("correo"), name="usuario_correo_unico_ci"),
             models.UniqueConstraint(
-                fields=["numero_nomina"],
+                Lower("numero_nomina"),
                 condition=models.Q(numero_nomina__isnull=False),
                 name="usuario_nomina_unica",
             ),

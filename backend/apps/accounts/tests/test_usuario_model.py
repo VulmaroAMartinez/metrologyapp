@@ -183,6 +183,17 @@ def test_nomina_unique_constraint_also_stops_bulk_inserts_of_empty_strings():
         )
 
 
+def test_nomina_uniqueness_ignores_case_in_the_database():
+    Usuario.objects.bulk_create(
+        [Usuario(correo="a@e.test", nombre="A", rol="ADMIN", numero_nomina="ab-12")]
+    )
+
+    with pytest.raises(IntegrityError, match="usuario_nomina_unica"), transaction.atomic():
+        Usuario.objects.bulk_create(
+            [Usuario(correo="b@e.test", nombre="B", rol="ADMIN", numero_nomina="AB-12")]
+        )
+
+
 def test_nomina_can_be_reused_after_it_is_cleared():
     primero = make(correo="a@e.test", numero_nomina="777")
     primero.numero_nomina = None
