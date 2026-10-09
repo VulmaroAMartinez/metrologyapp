@@ -18,4 +18,8 @@ testpaths = ["apps", "config"]
 addopts = "--ds=config.settings.test --durations=10 -p no:cacheprovider --cov=apps --cov=config --cov-report=term-missing --cov-fail-under=85"
 
 [tool.coverage.run]
+source = ["apps", "config"]
 omit = ["*/tests/*", "config/wsgi.py"]
+# Cada proceso escribe su propio archivo de datos: las pruebas que importan settings.prod en un
+# intérprete nuevo (subprocess) también se miden y se combinan al final (ver conftest.py).
+parallel = true

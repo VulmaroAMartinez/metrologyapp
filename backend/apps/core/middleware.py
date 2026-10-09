@@ -43,3 +43,18 @@ class TrustedProxyHeadersMiddleware:
             for key in FORWARDED_META_KEYS:
                 request.META.pop(key, None)
         return self.get_response(request)
+
+
+class NoStoreApiMiddleware:
+    """Ninguna respuesta de /api/ se almacena en caché: llevan sesiones, datos de usuarios y
+    bitácora. Va por fuera de todo (justo tras TrustedProxyHeadersMiddleware) para alcanzar
+    también los errores (401, 403, 404, 405), el rechazo de CSRF y las redirecciones."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if request.path.startswith("/api/"):
+            response["Cache-Control"] = "no-store"
+        return response

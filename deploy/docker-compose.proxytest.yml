@@ -2,6 +2,12 @@
 # Añade una API en modo producción para comprobar, a través de Caddy, que una cabecera
 # X-Forwarded-Proto falsificada no evita la redirección a HTTPS.
 services:
+  api:
+    environment:
+      # Las pruebas funcionales (cabeceras, cookies, flujos) también inician sesión desde la misma IP:
+      # se sube el límite por IP sola para no agotarlo; el límite por IP+correo sigue siendo 5.
+      LOGIN_RATE_PER_IP: "40"
+
   api-prod:
     restart: "no"
     build: {context: ../backend, target: runtime}

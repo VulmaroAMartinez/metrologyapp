@@ -6,74 +6,16 @@ entra pero no puede cambiar la suya, y A restablece la del otro administrador (B
 con la nueva. No hay contraseñas temporales ni cambio forzado al entrar.
 """
 
-import http.client
 import json
 import os
 import uuid
-from urllib.parse import urlparse
 
-import pytest
+from cliente import Cliente
 
-BASE = urlparse(os.environ["PROXY_BASE_URL"])
 ADMIN_CORREO = os.environ["PROXYTEST_ADMIN_CORREO"]
-ADMIN_CLAVE = os.environ["PROXYTEST_ADMIN_CONTRASENA"]
 CLAVE_TECNICO = "tornillo-azul-77-nube"
 CLAVE_B = "nube-de-algodon-88-azul"
 CLAVE_NUEVA = "cafe-con-leche-99-dulce"
-
-
-class Cliente:
-    """Navegador mínimo sobre http.client: guarda cookies y envía el token CSRF."""
-
-    def __init__(self):
-        self.cookies, self.token = {}, None
-
-    def pedir(self, metodo, ruta, cuerpo=None):
-        cabeceras = {"Cookie": "; ".join(f"{k}={v}" for k, v in self.cookies.items())}
-        if metodo != "GET":
-            if self.token is None:
-                self.obtener_csrf()
-            cabeceras["X-CSRFToken"] = self.token
-        datos = None
-        if cuerpo is not None:
-            datos = json.dumps(cuerpo)
-            cabeceras["Content-Type"] = "application/json"
-        conexion = http.client.HTTPConnection(BASE.hostname, BASE.port, timeout=15)
-        conexion.request(metodo, ruta, body=datos, headers=cabeceras)
-        respuesta = conexion.getresponse()
-        crudo = respuesta.read()
-        for cookie in respuesta.msg.get_all("Set-Cookie") or []:
-            nombre, _, valor = cookie.split(";")[0].partition("=")
-            if valor:
-                self.cookies[nombre] = valor
-            else:
-                self.cookies.pop(nombre, None)
-        conexion.close()
-        cuerpo_json = json.loads(crudo) if crudo else None
-        return respuesta.status, {k.lower(): v for k, v in respuesta.getheaders()}, cuerpo_json
-
-    def obtener_csrf(self):
-        _, _, cuerpo = self.pedir("GET", "/api/v1/auth/csrf/")
-        self.token = cuerpo["csrfToken"]
-
-    def iniciar_sesion(self, correo, contrasena):
-        self.obtener_csrf()
-        resultado = self.pedir(
-            "POST", "/api/v1/auth/login/", {"correo": correo, "contrasena": contrasena}
-        )
-        if resultado[0] == 200:
-            self.obtener_csrf()  # el token rota al iniciar sesión
-        return resultado
-
-
-@pytest.fixture(scope="module")
-def admin():
-    """El administrador A entra directo: no hay cambio de contraseña forzado."""
-    cliente = Cliente()
-    estado, _, perfil = cliente.iniciar_sesion(ADMIN_CORREO, ADMIN_CLAVE)
-    assert estado == 200 and perfil["rol"] == "ADMIN"
-    assert set(perfil) == {"id", "nombre", "correo", "rol", "numero_nomina"}
-    return cliente
 
 
 def crear_usuario(admin, rol, contrasena):

@@ -97,6 +97,8 @@ services:
       # Fuera de /app: si se monta backend/ sobre /app, Docker no crea archivos vacíos en el repo.
       - ../.env.example:/opt/test/.env.example:ro
       - ./db/privileges.sql:/opt/test/privileges.sql:ro # las pruebas de roles lo aplican a su base propia
+      - ../docs:/opt/test/docs:ro # la prueba de la lista de seguridad verifica sus referencias
+      - ../Makefile:/opt/test/Makefile:ro
     depends_on:
       db: {condition: service_healthy}
     read_only: true

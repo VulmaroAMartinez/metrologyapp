@@ -2,7 +2,7 @@
 COMPOSE := docker compose -f deploy/docker-compose.yml --env-file .env
 MIGRATE := $(COMPOSE) --profile tools run --rm --build migrate
 
-.PHONY: help up down logs migrate fmt lock test test-proxy lint ci secrets
+.PHONY: help up down logs migrate fmt lock audit check-containers test test-proxy lint ci secrets
 
 help: ## Lista de comandos
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/ -/'
@@ -39,6 +39,12 @@ secrets: ## Escaneo de secretos: historial git y archivos del directorio de trab
 test: ## Pruebas (backend con pytest; frontend se suma después)
 	$(COMPOSE) --profile tools run --rm --build test
 
+audit: ## Auditoría de dependencias (pip-audit) contra los archivos con hashes; falla si hay vulnerabilidades
+	docker compose -f deploy/docker-compose.yml --env-file .env.example --profile tools run --rm --build --no-deps -e HOME=//tmp -e XDG_CACHE_HOME=//tmp test sh -c "pip-audit -r requirements.txt --require-hashes --disable-pip && pip-audit -r requirements-dev.txt --require-hashes --disable-pip"
+
+check-containers: ## Verifica la seguridad de los contenedores del entorno de desarrollo en ejecución
+	sh deploy/verificar_contenedores.sh metrologia
+
 test-proxy: ## Pruebas contra el stack real (Caddy + Django) con cabeceras falsificadas
 	sh deploy/proxytest.sh
 
@@ -47,4 +53,4 @@ lint: ## Valida compose y Caddyfile, y ruff del backend
 	docker compose -f deploy/docker-compose.yml --env-file .env.example config -q
 	docker run --rm --env-file .env.example -v "$(CURDIR)/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.11.7-alpine caddy validate --config //etc/caddy/Caddyfile
 
-ci: lint test test-proxy secrets ## Todo lo anterior; falla ante cualquier problema
+ci: lint audit test test-proxy secrets ## Todo lo anterior; falla ante cualquier problema

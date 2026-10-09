@@ -23,8 +23,11 @@ Si ejecutas `docker compose` a mano, usa `docker compose -f deploy/docker-compos
 | `make lint` | ruff + validación del compose y del Caddyfile |
 | `make fmt` | Formatea el backend con ruff |
 | `make lock` | Regenera `backend/requirements*.txt` con hashes |
+| `make audit` | Auditoría de dependencias (pip-audit) contra los archivos con hashes; falla si hay vulnerabilidades |
+| `make test-proxy` | Pruebas contra el stack real (Caddy, Django, PostgreSQL): cabeceras falsificadas, cabeceras de seguridad, cookies, flujos de usuarios y verificación de contenedores |
+| `make check-containers` | Verifica la seguridad de los contenedores del entorno de desarrollo en ejecución |
 | `make secrets` | Escaneo de secretos con gitleaks |
-| `make ci` | lint + pruebas + secretos |
+| `make ci` | lint + auditoría + pruebas + pruebas contra el stack real + secretos |
 
 ## Roles de base de datos
 

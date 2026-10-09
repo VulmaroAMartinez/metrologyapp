@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import tempfile
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -77,3 +78,42 @@ def roles_db():
     finally:
         with closing(conectar("postgres")) as admin:
             admin.execute(f"DROP DATABASE IF EXISTS {ROLES_TEST_DB} WITH (FORCE)")
+
+
+# --- cobertura de los subprocesos (settings.prod se importa en un intérprete nuevo) ---
+#
+# Varias pruebas ejecutan `python -c "import config.settings.prod"` con un entorno explícito,
+# porque la validación de producción ocurre al importar el módulo. Para medir esos procesos,
+# coverage necesita arrancar dentro de ellos: un `sitecustomize` llama a
+# `coverage.process_startup()`. Va en un directorio temporal (el contenedor es de solo lectura)
+# y se pone en PYTHONPATH solo para esos procesos hijos.
+
+_SITIO_COBERTURA = Path(tempfile.gettempdir()) / "cobertura_subprocesos"
+_SITIO_COBERTURA.mkdir(exist_ok=True)
+(_SITIO_COBERTURA / "sitecustomize.py").write_text(
+    "try:\n"
+    "    import coverage\n"
+    "    coverage.process_startup()\n"
+    "except Exception:  # sin coverage: no hay nada que medir\n"
+    "    pass\n",
+    encoding="utf-8",
+)
+ENTORNO_COBERTURA = {
+    "COVERAGE_PROCESS_START": str(Path(__file__).resolve().parent / "pyproject.toml"),
+    "COVERAGE_FILE": os.environ.get(
+        "COVERAGE_FILE", str(Path(tempfile.gettempdir()) / ".coverage")
+    ),
+    "PYTHONPATH": str(_SITIO_COBERTURA),
+}
+
+
+@pytest.fixture(autouse=True)
+def _medir_cobertura_de_subprocesos(monkeypatch):
+    ejecutar = subprocess.run
+
+    def run(args, *posicionales, env=None, **opciones):
+        if env is not None and args and args[0] == sys.executable:
+            env = {**env, **ENTORNO_COBERTURA}
+        return ejecutar(args, *posicionales, env=env, **opciones)
+
+    monkeypatch.setattr(subprocess, "run", run)

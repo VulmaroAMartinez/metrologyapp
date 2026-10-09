@@ -27,12 +27,13 @@ trap cleanup EXIT
 
 $COMPOSE up -d --build --wait db
 $COMPOSE --profile tools run --rm --build migrate
-# Primer administrador, como en una instalación real; nace con el cambio de contraseña pendiente.
+# Primer administrador, como en una instalación real (crear_admin; entra directo, sin cambio forzado).
 ADMIN_CORREO=admin-proxytest@empresa.test
 ADMIN_CLAVE=$(rand 24)
 $COMPOSE --profile tools run --rm --no-deps -e CREAR_ADMIN_CONTRASENA="$ADMIN_CLAVE" migrate \
   python manage.py crear_admin --correo "$ADMIN_CORREO" --nombre "Admin Proxytest"
 $COMPOSE up -d --build --wait
+sh deploy/verificar_contenedores.sh metrologia-proxytest
 $COMPOSE --profile tools run --rm --build --no-deps -e PROXY_BASE_URL=http://proxy:8080 \
   -e PROXYTEST_ADMIN_CORREO="$ADMIN_CORREO" -e PROXYTEST_ADMIN_CONTRASENA="$ADMIN_CLAVE" test \
   pytest --ds=config.settings.test -p no:cacheprovider -o addopts="" -v proxytests

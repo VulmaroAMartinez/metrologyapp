@@ -48,11 +48,13 @@ AUTH_PASSWORD_VALIDATORS = [
 
 MIDDLEWARE = [
     "apps.core.middleware.TrustedProxyHeadersMiddleware",  # primero: sanea X-Forwarded-*
+    "apps.core.middleware.NoStoreApiMiddleware",  # Cache-Control: no-store en todo /api/
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",  # aplica X_FRAME_OPTIONS
 ]
 
 # --- Sesión y CSRF --------------------------------------------------------------------------
