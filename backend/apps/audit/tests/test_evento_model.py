@@ -19,11 +19,6 @@ TIPOS_DEFINICION = {
     "CERTIFICADO_ELIMINADO",
     "REEMPLAZO_INICIADO",
     "REEMPLAZO_TERMINADO",
-    "AVISO_CREADO",
-    "AVISO_EDITADO",
-    "AVISO_CANCELADO",
-    "AVISO_ENVIADO",
-    "AVISO_FALLIDO",
     "USUARIO_CREADO",
     "USUARIO_ROL_CAMBIADO",
     "USUARIO_DESACTIVADO",
@@ -55,6 +50,21 @@ def test_str_shows_type_and_id():
     evento = crear()
 
     assert str(evento) == f"SESION_INICIADA #{evento.pk}"
+
+
+TIPOS_AVISO = ["AVISO_CREADO", "AVISO_EDITADO", "AVISO_CANCELADO", "AVISO_ENVIADO", "AVISO_FALLIDO"]
+
+
+@pytest.mark.parametrize("tipo", TIPOS_AVISO)
+def test_notice_event_types_do_not_exist_in_code_or_database(tipo):
+    assert tipo not in TipoEvento.values
+    assert not hasattr(TipoEvento, tipo)
+    with pytest.raises(IntegrityError, match="evento_tipo_valido"), transaction.atomic():
+        Evento.objects.bulk_create([Evento(tipo=tipo, descripcion="x")])
+
+
+def test_the_daily_process_event_type_is_kept():
+    assert "PROCESO_DIARIO_EJECUTADO" in TipoEvento.values
 
 
 def test_insert_with_defaults_means_system_event():
@@ -172,3 +182,21 @@ def test_indexes_and_constraint_exist_in_the_database():
     assert restricciones["evento_tipo_valido"]["check"] is True
     nombres = set(restricciones)
     assert {"evento_ocurrido_en_idx", "evento_tipo_idx", "evento_instrumento_idx"} <= nombres
+
+
+def test_the_migration_refuses_to_run_if_notice_events_exist():
+    """Los eventos no se pueden borrar: con filas AVISO_* la migración avisa y se detiene."""
+    import importlib
+    from types import SimpleNamespace
+
+    migracion = importlib.import_module("apps.audit.migrations.0003_quitar_tipos_aviso")
+
+    def apps_con(cantidad):
+        modelo = SimpleNamespace(
+            objects=SimpleNamespace(filter=lambda **kwargs: SimpleNamespace(count=lambda: cantidad))
+        )
+        return SimpleNamespace(get_model=lambda app, nombre: modelo)
+
+    migracion.verificar_sin_eventos_de_aviso(apps_con(0), None)  # sin filas: continúa
+    with pytest.raises(RuntimeError, match="3 eventos con tipo AVISO_"):
+        migracion.verificar_sin_eventos_de_aviso(apps_con(3), None)
