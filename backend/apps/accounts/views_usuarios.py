@@ -142,10 +142,7 @@ def reactivar(request, pk):
 def restablecer_contrasena(request, pk):
     try:
         objetivo, temporal = services.restablecer_contrasena(
-            request.user.pk,
-            pk,
-            ip=client_ip(request),
-            sesion_actual=request.session.session_key,
+            request.user.pk, pk, ip=client_ip(request)
         )
     except services.ErrorDeUsuario as error:
         return _error(error)

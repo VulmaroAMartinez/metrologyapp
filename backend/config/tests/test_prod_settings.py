@@ -23,7 +23,9 @@ GOOD_ENV = {
 
 
 def load_env_example() -> dict[str, str]:
-    assert ENV_EXAMPLE.exists(), "El servicio test debe montar .env.example en /opt/test/.env.example"
+    assert ENV_EXAMPLE.exists(), (
+        "El servicio test debe montar .env.example en /opt/test/.env.example"
+    )
     pairs = (
         line.split("=", 1)
         for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()

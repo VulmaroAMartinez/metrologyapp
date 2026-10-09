@@ -275,7 +275,10 @@ class NominaDuplicada(ErrorDeUsuario):
 class AutoModificacionNoPermitida(ErrorDeUsuario):
     codigo = "auto_modificacion_no_permitida"
     estado = 403
-    detalle = "No puedes desactivarte ni cambiar tu propio rol."
+    detalle = (
+        "No puedes desactivarte, cambiar tu propio rol ni restablecer tu propia contraseña "
+        "desde la administración (usa cambiar-contrasena)."
+    )
 
 
 class UltimoAdministrador(ErrorDeUsuario):
@@ -407,9 +410,8 @@ def generar_contrasena_temporal(usuario=None) -> str:
         return candidata
 
 
-def invalidar_sesiones(usuario_pk: int, conservar: str | None = None) -> int:
-    """Borra de django_session las sesiones de un usuario (menos `conservar`, la que está
-    atendiendo la petición actual: borrarla haría que la respuesta saliera como 400).
+def invalidar_sesiones(usuario_pk: int) -> int:
+    """Borra de django_session las sesiones de un usuario.
 
     django_session no guarda el usuario en una columna, así que se decodifica cada sesión
     vigente; aceptable para el volumen de este sistema (decisiones.md)."""
@@ -417,7 +419,6 @@ def invalidar_sesiones(usuario_pk: int, conservar: str | None = None) -> int:
         sesion.session_key
         for sesion in Session.objects.filter(expire_date__gt=timezone.now()).iterator()
         if str(sesion.get_decoded().get(SESSION_KEY)) == str(usuario_pk)
-        and sesion.session_key != conservar
     ]
     if claves:
         Session.objects.filter(session_key__in=claves).delete()
@@ -576,21 +577,20 @@ def reactivar_usuario(actor_pk, objetivo_pk, ip=None) -> Usuario:
     return objetivo
 
 
-def restablecer_contrasena(actor_pk, objetivo_pk, ip=None, sesion_actual=None):
+def restablecer_contrasena(actor_pk, objetivo_pk, ip=None):
     """Genera una contraseña temporal y exige cambiarla. Devuelve (usuario, temporal).
 
-    NO modifica intentos_fallidos ni bloqueado_hasta: sería un desbloqueo manual, descartado
-    por decisión del equipo. `sesion_actual` se conserva si el administrador se restablece a
-    sí mismo (su sesión deja de valer igualmente porque cambia el hash de la contraseña)."""
+    Un administrador no puede restablecerse a sí mismo por aquí: su vía es cambiar-contrasena,
+    que pide la contraseña actual. NO modifica intentos_fallidos ni bloqueado_hasta: sería un
+    desbloqueo manual, descartado por decisión del equipo."""
     with transaction.atomic():
         actor, objetivo, _ = _bloquear_administradores(actor_pk, objetivo_pk)
+        _no_a_si_mismo(actor, objetivo)
         temporal = generar_contrasena_temporal(objetivo)
         objetivo.set_password(temporal)
         objetivo.debe_cambiar_contrasena = True
         objetivo.save(update_fields=["password", "debe_cambiar_contrasena"])
-        invalidar_sesiones(
-            objetivo.pk, conservar=sesion_actual if objetivo.pk == actor.pk else None
-        )
+        invalidar_sesiones(objetivo.pk)
         registrar_evento(
             TipoEvento.USUARIO_CONTRASENA_RESTABLECIDA,
             actor,

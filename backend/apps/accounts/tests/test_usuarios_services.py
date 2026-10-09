@@ -354,24 +354,29 @@ def test_if_closing_sessions_fails_nothing_is_changed(nombre, ana, carla):
 # --- reglas de administradores ---
 
 
-def test_an_admin_cannot_deactivate_or_change_their_own_role(ana, beto):
-    with pytest.raises(services.AutoModificacionNoPermitida) as error:
-        services.desactivar_usuario(ana.pk, ana.pk)
-    assert error.value.codigo == "auto_modificacion_no_permitida" and error.value.estado == 403
-    with pytest.raises(services.AutoModificacionNoPermitida):
-        services.cambiar_rol(ana.pk, ana.pk, TECNICO)
+def test_an_admin_cannot_deactivate_change_role_or_reset_their_own_password(ana, beto):
+    clave_antes = ana.password
+    for operacion in (
+        lambda: services.desactivar_usuario(ana.pk, ana.pk),
+        lambda: services.cambiar_rol(ana.pk, ana.pk, TECNICO),
+        lambda: services.restablecer_contrasena(ana.pk, ana.pk),
+    ):
+        with pytest.raises(services.AutoModificacionNoPermitida) as error:
+            operacion()
+        assert error.value.codigo == "auto_modificacion_no_permitida"
+        assert error.value.estado == 403
 
     ana.refresh_from_db()
     assert ana.activo is True and ana.rol == ADMIN
+    assert ana.password == clave_antes and ana.debe_cambiar_contrasena is False
     assert Evento.objects.count() == 0
 
 
-def test_an_admin_can_edit_and_reset_their_own_data(ana):
+def test_an_admin_can_edit_their_own_data(ana):
     services.editar_usuario(ana.pk, ana.pk, {"nombre": "Ana María"})
-    _, temporal = services.restablecer_contrasena(ana.pk, ana.pk)
 
     ana.refresh_from_db()
-    assert ana.nombre == "Ana María" and ana.check_password(temporal)
+    assert ana.nombre == "Ana María"
 
 
 def test_an_admin_can_demote_and_deactivate_another_admin(ana, beto):
@@ -475,15 +480,6 @@ def test_invalidating_sessions_deletes_only_that_users_rows(ana, carla):
     assert borradas == 2
     assert Session.objects.filter(session_key=de_ana.session_cookie).exists()
     assert not Session.objects.filter(session_key__in=[uno.session_cookie, dos.session_cookie])
-
-
-def test_invalidating_can_keep_the_current_session(carla):
-    actual, otra = sesion_de(carla), sesion_de(carla)
-
-    services.invalidar_sesiones(carla.pk, conservar=actual.session_cookie)
-
-    assert Session.objects.filter(session_key=actual.session_cookie).exists()
-    assert not Session.objects.filter(session_key=otra.session_cookie).exists()
 
 
 def test_invalidating_ignores_anonymous_and_expired_sessions(carla, clock):

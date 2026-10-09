@@ -405,15 +405,21 @@ def test_change_role(api_admin):
     assert api_admin.post(ruta(987654, "cambiar-rol"), {"rol": "ADMIN"}).status_code == 404
 
 
-def test_an_admin_cannot_change_their_own_role_or_deactivate_themselves(api_admin, admin):
+def test_an_admin_cannot_change_their_role_deactivate_or_reset_themselves(api_admin, admin):
+    clave_antes = admin.password
     rol = api_admin.post(ruta(admin.pk, "cambiar-rol"), {"rol": "TECNICO"})
     desactivar = api_admin.post(ruta(admin.pk, "desactivar"))
+    restablecer = api_admin.post(ruta(admin.pk, "restablecer-contrasena"))
 
-    for respuesta in (rol, desactivar):
+    for respuesta in (rol, desactivar, restablecer):
         assert respuesta.status_code == 403
         assert respuesta.json()["codigo"] == "auto_modificacion_no_permitida"
+        assert "contrasena_temporal" not in respuesta.json()
     admin.refresh_from_db()
     assert admin.rol == ADMIN and admin.activo is True
+    assert admin.password == clave_antes and admin.debe_cambiar_contrasena is False
+    assert api_admin.get(ME).status_code == 200  # su sesión sigue intacta
+    assert Evento.objects.filter(tipo__startswith="USUARIO_").count() == 0
 
 
 def test_deactivate_and_reactivate(api_admin):
@@ -471,15 +477,6 @@ def test_reset_does_not_unlock_a_locked_account(api_admin, clock):
     clock.advance(minutes=10, seconds=1)
     entrada = Api().login(objetivo.correo, temporal)  # se libera solo al vencer
     assert entrada.status_code == 200 and entrada.json()["debe_cambiar_contrasena"] is True
-
-
-def test_an_admin_resetting_their_own_password_still_gets_the_temporary_one(api_admin, admin):
-    respuesta = api_admin.post(ruta(admin.pk, "restablecer-contrasena"))
-
-    assert respuesta.status_code == 200  # la sesión actual no se borra a mitad de petición
-    temporal = respuesta.json()["contrasena_temporal"]
-    assert api_admin.get(ME).status_code == 401  # pero deja de valer: cambió la contraseña
-    assert Api().login(admin.correo, temporal).status_code == 200
 
 
 # --- sesiones ---
