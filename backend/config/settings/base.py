@@ -80,6 +80,10 @@ LOGIN_LOCKOUT_MINUTES = env.int("LOGIN_LOCKOUT_MINUTES", default=15)
 LOGIN_RATE_PER_IP_EMAIL = env.int("LOGIN_RATE_PER_IP_EMAIL", default=5)  # por minuto
 LOGIN_RATE_PER_IP = env.int("LOGIN_RATE_PER_IP", default=20)  # por minuto
 
+# Espera máxima de candados en las operaciones de administración (SET LOCAL lock_timeout). Si
+# vence, la operación se revierte entera y se responde "reintenta" (503 `reintentar`).
+ADMIN_LOCK_TIMEOUT_MS = env.int("ADMIN_LOCK_TIMEOUT_MS", default=5000)
+
 # Redes desde las que se aceptan X-Forwarded-* (el proxy Caddy). Por defecto, rangos privados:
 # la API solo es alcanzable desde la red interna de Docker. En producción, acotar a su subred.
 TRUSTED_PROXY_CIDRS = env.list("TRUSTED_PROXY_CIDRS", default=DEFAULT_TRUSTED_PROXY_CIDRS)

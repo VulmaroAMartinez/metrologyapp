@@ -117,4 +117,6 @@ def cambiar_contrasena(request):
         )
     except ValidationError as error:
         return respuesta({"codigo": "contrasena_invalida", "detalle": error.messages}, status=400)
+    except services.ErrorDeUsuario as error:
+        return respuesta({"codigo": error.codigo, "detalle": error.detalle}, status=error.estado)
     return respuesta(UsuarioActualSerializer(usuario).data)

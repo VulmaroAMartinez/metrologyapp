@@ -376,16 +376,19 @@ def test_if_the_change_fails_after_the_event_no_event_remains(nombre, ana, objet
 
 
 @pytest.mark.parametrize("nombre", ["desactivar", "restablecer"])
-def test_if_closing_sessions_fails_nothing_is_changed(nombre, ana, carla):
+def test_if_the_operation_fails_no_session_is_closed(nombre, ana, carla):
+    """El cierre de sesiones se programa al confirmar: si la operación se revierte, no ocurre."""
+    sesion_de(carla)
     antes = instantanea()
 
     with (
-        mock.patch.object(services, "invalidar_sesiones", side_effect=RuntimeError("falla")),
+        mock.patch.object(services, "registrar_evento", side_effect=RuntimeError("falla")),
         pytest.raises(RuntimeError),
     ):
         OPERACIONES[nombre](ana, carla)
 
     assert instantanea() == antes
+    assert Session.objects.count() == 1
 
 
 # --- reglas de administradores ---
@@ -425,7 +428,6 @@ def test_an_admin_can_reset_the_other_admins_password(ana, beto):
     beto.refresh_from_db()
     assert beto.check_password(CLAVE_2)
     assert not beto.check_password(DEFAULT_PASSWORD)
-    assert not Session.objects.exists()  # sus sesiones se cerraron
 
 
 def test_an_admin_can_demote_and_deactivate_another_admin(ana, beto):
@@ -584,7 +586,8 @@ def test_invalidating_ignores_anonymous_and_expired_sessions(carla, clock):
     assert services.invalidar_sesiones(carla.pk) == 0
 
 
-def test_deactivate_and_reset_close_the_targets_sessions_in_the_same_transaction(ana, carla):
+@pytest.mark.django_db(transaction=True)  # transacciones reales: se ejecutan los on_commit
+def test_deactivate_and_reset_close_the_targets_sessions_after_the_commit(ana, carla):
     sesion_de(carla)
     services.desactivar_usuario(ana.pk, carla.pk)
     assert not Session.objects.exists()

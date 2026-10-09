@@ -108,6 +108,18 @@ ENTORNO_COBERTURA = {
 
 
 @pytest.fixture(autouse=True)
+def _cache_limpia_tras_transacciones_reales(request):
+    """El flush de las pruebas con `transaction=True` no vacía `django_cache` (no es un modelo):
+    sin esto, los contadores del límite de tasa pasan de una prueba a la siguiente."""
+    yield
+    marca = request.node.get_closest_marker("django_db")
+    if marca is not None and marca.kwargs.get("transaction"):
+        from django.core.cache import cache
+
+        cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def _medir_cobertura_de_subprocesos(monkeypatch):
     ejecutar = subprocess.run
 

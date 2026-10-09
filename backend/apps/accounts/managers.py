@@ -7,7 +7,11 @@ class UsuarioManager(BaseUserManager):
 
     use_in_migrations = True
 
-    def create_user(self, correo, nombre, rol, password=None, **extra_fields):
+    def create_user(
+        self, correo, nombre, rol, password=None, *, contrasena_cifrada=None, **extra_fields
+    ):
+        """`contrasena_cifrada`: hash ya calculado (los servicios lo hacen fuera de la
+        transacción para no retener candados durante Argon2)."""
         if not correo:
             raise ValueError("El correo es obligatorio.")
         if not nombre:
@@ -20,7 +24,9 @@ class UsuarioManager(BaseUserManager):
             rol=rol,
             **extra_fields,
         )
-        if password is None:
+        if contrasena_cifrada is not None:
+            usuario.password = contrasena_cifrada
+        elif password is None:
             usuario.set_unusable_password()
         else:
             usuario.set_password(password)

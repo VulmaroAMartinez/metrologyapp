@@ -619,7 +619,6 @@ def test_deactivating_closes_the_open_sessions_immediately(api_admin):
         respuesta = abierta.get(ME)
         assert respuesta.status_code == 401
         assert respuesta.json()["codigo"] == "no_autenticado"
-    assert not Session.objects.filter(session_key__in=[uno.session_cookie, dos.session_cookie])
 
 
 def test_resetting_closes_the_open_sessions_immediately(api_admin):

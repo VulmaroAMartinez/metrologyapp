@@ -7,6 +7,7 @@ registran contraseñas, hashes ni el correo de un intento contra un usuario inex
 import functools
 import logging
 import secrets
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import StrEnum
@@ -27,7 +28,9 @@ from apps.audit.models import TipoEvento
 from apps.audit.services import registrar_evento
 from apps.core.network import client_ip
 
+from . import locks
 from .models import Usuario
+from .permissions import Accion, puede
 
 logger = logging.getLogger(__name__)
 
@@ -199,38 +202,50 @@ def cerrar_sesion(request) -> None:
 
 
 def cambiar_contrasena(request, usuario_pk: int, actual: str, nueva: str) -> Usuario:
-    """Cambio de la contraseña propia (solo ADMIN: acción CAMBIAR_PROPIA_CONTRASENA)."""
+    """Cambio de la contraseña propia (solo ADMIN: acción CAMBIAR_PROPIA_CONTRASENA).
+
+    La verificación y el hash (Argon2) ocurren ANTES de la transacción. Dentro, con la fila
+    bloqueada, se comprueba que la contraseña guardada sigue siendo EXACTAMENTE aquella contra la
+    que se verificó (la "versión"): si otro administrador la restableció entretanto, 409 en vez
+    de pisar su cambio."""
     usuario = Usuario.objects.get(pk=usuario_pk)
-    if not usuario.check_password(actual):
+    leida = usuario.password
+    if not check_password(actual, leida):
         raise ContrasenaActualIncorrecta
     if actual == nueva:
         raise ContrasenaRepetida
     validate_password(nueva, usuario)  # ValidationError con los mensajes de los validadores
+    nueva_cifrada = make_password(nueva)
 
     ip = client_ip(request)
-    with transaction.atomic():
-        usuario.set_password(nueva)
-        usuario.save(update_fields=["password"])
+    with _seccion_critica():
+        locks.fijar_lock_timeout()
+        fresco = Usuario.objects.select_for_update(no_key=True).get(pk=usuario_pk)
+        if fresco.password != leida:
+            raise ContrasenaModificada
+        if not fresco.activo or not puede(fresco.rol, Accion.CAMBIAR_PROPIA_CONTRASENA):
+            raise ActorNoVigente
+        fresco.password = nueva_cifrada
+        fresco.save(update_fields=["password"])
         # Sin antes/después: la contraseña nunca va a la bitácora, ni siquiera su hash.
         registrar_evento(
             TipoEvento.USUARIO_CONTRASENA_CAMBIADA,
-            usuario,
+            fresco,
             "El administrador cambió su propia contraseña",
             ip=ip,
         )
         # Conserva la sesión actual; las demás dejan de ser válidas porque su hash de sesión
         # ya no coincide con la contraseña nueva.
-        update_session_auth_hash(request, usuario)
-    return usuario
+        update_session_auth_hash(request, fresco)
+    return fresco
 
 
 # --- Gestión de usuarios (solo ADMIN, acción GESTIONAR_USUARIOS) ------------------------------
 #
-# Cada servicio corre en transaction.atomic() con su evento dentro. Antes de tocar nada se
-# bloquean (FOR NO KEY UPDATE, en orden de pk) todas las filas de administradores activos: así
-# dos administradores que operan a la vez se serializan, el actor se revalida con el estado más
-# reciente y el sistema nunca queda sin un administrador activo. NO KEY UPDATE (y no UPDATE)
-# para no bloquear las llaves foráneas de los eventos que referencian a estos usuarios.
+# Cada servicio hace FUERA de la transacción todo lo caro (campos, validadores, hash Argon2) y
+# DENTRO de `_seccion_critica()` solo lo que necesita candados, volviendo a comprobar con el estado
+# fresco: actor vigente, objetivo, duplicados. Orden de candados y regla de escritura de
+# `rol`/`activo`: `apps/accounts/locks.py`. El cierre de sesiones se programa con on_commit.
 # No hay borrado físico ni desbloqueo manual: ningún servicio toca intentos_fallidos ni
 # bloqueado_hasta.
 
@@ -294,6 +309,25 @@ class UsuarioInexistente(ErrorDeUsuario):
     detalle = "El usuario no existe."
 
 
+class ReintentarMasTarde(ErrorDeUsuario):
+    """No se obtuvo un candado a tiempo (lock_timeout); la operación se revirtió entera."""
+
+    codigo = "reintentar"
+    estado = 503
+    detalle = (
+        "El sistema está ocupado con otra operación de administración. Reintenta en unos segundos."
+    )
+
+
+class ContrasenaModificada(ErrorDeUsuario):
+    """La contraseña cambió entre verificarla y aplicar el cambio (p. ej. la restableció otro
+    administrador)."""
+
+    codigo = "contrasena_modificada"
+    estado = 409
+    detalle = "La contraseña cambió mientras se procesaba tu solicitud. Vuelve a intentarlo."
+
+
 def _limpiar_campos(campos: dict) -> dict:
     """Normaliza y valida solo los campos presentes: correo en minúsculas y sin espacios,
     nombre obligatorio, numero_nomina vacío -> None. Correo y numero_nomina solo admiten ASCII
@@ -348,26 +382,41 @@ def _relanzar_unicidad(error: IntegrityError):
     raise error
 
 
-def _bloquear_administradores(actor_pk, objetivo_pk=None):
-    """Bloquea los administradores activos y, si no es uno de ellos, al objetivo.
+@contextmanager
+def _seccion_critica():
+    """Transacción de una operación de administración.
 
-    Devuelve (actor, objetivo, administradores_activos). Debe llamarse dentro de atomic()."""
+    Si un candado no se obtiene a tiempo (lock_timeout), la transacción se revierte entera y se
+    responde "reintenta": nunca queda un cambio a medias."""
+    try:
+        with transaction.atomic():
+            yield
+    except OperationalError as error:
+        if getattr(error.__cause__, "sqlstate", None) != SQLSTATE_LOCK_NOT_AVAILABLE:
+            raise
+        raise ReintentarMasTarde from error
+
+
+def _bloquear(actor_pk, objetivo_pk=None):
+    """L0 y, si hay objetivo, L1 de SU fila (ver `locks`). Debe llamarse dentro de
+    `_seccion_critica()`. Los administradores se leen sin candado de fila: L0 basta porque toda
+    escritura de `rol` o `activo` la toma.
+
+    Devuelve (actor, objetivo, administradores_activos); el actor se revalida con el estado más
+    reciente y el objetivo llega fresco, ya bloqueado."""
+    locks.fijar_lock_timeout()
+    locks.tomar_candado_de_administradores()
     administradores = list(
-        Usuario.objects.select_for_update(no_key=True)
-        .filter(rol=Usuario.Rol.ADMIN, activo=True)
-        .order_by("pk")
+        Usuario.objects.filter(rol=Usuario.Rol.ADMIN, activo=True).order_by("pk")
     )
-    por_pk = {u.pk: u for u in administradores}
     actor = None
     if actor_pk is not None:
-        actor = por_pk.get(actor_pk)
+        actor = next((u for u in administradores if u.pk == actor_pk), None)
         if actor is None:
             raise ActorNoVigente
     objetivo = None
     if objetivo_pk is not None:
-        objetivo = por_pk.get(objetivo_pk) or (
-            Usuario.objects.select_for_update(no_key=True).filter(pk=objetivo_pk).first()
-        )
+        objetivo = Usuario.objects.select_for_update(no_key=True).filter(pk=objetivo_pk).first()
         if objetivo is None:
             raise UsuarioInexistente
     return actor, objetivo, administradores
@@ -396,7 +445,10 @@ def invalidar_sesiones(usuario_pk: int) -> int:
     """Borra de django_session las sesiones de un usuario.
 
     django_session no guarda el usuario en una columna, así que se decodifica cada sesión
-    vigente; aceptable para el volumen de este sistema (decisiones.md)."""
+    vigente; aceptable para el volumen de este sistema (decisiones.md: ~1 ms con 300 sesiones).
+    Es limpieza posterior al commit: la invalidación real no depende de ella (un usuario
+    desactivado falla `is_active` en cada petición y, tras un cambio de contraseña, el hash de
+    sesión ya no coincide)."""
     claves = [
         sesion.session_key
         for sesion in Session.objects.filter(expire_date__gt=timezone.now()).iterator()
@@ -405,6 +457,24 @@ def invalidar_sesiones(usuario_pk: int) -> int:
     if claves:
         Session.objects.filter(session_key__in=claves).delete()
     return len(claves)
+
+
+def _cerrar_sesiones(usuario_pk: int) -> None:
+    try:
+        invalidar_sesiones(usuario_pk)
+    except Exception as error:  # noqa: BLE001 - tras el commit nada debe tumbar la respuesta
+        # Solo el id y el tipo de error: sin correo, sesión ni datos del usuario.
+        logger.error(
+            "No se pudieron borrar las sesiones de usuario_id=%s (%s); siguen inválidas "
+            "por usuario inactivo o hash de contraseña distinto",
+            usuario_pk,
+            type(error).__name__,
+        )
+
+
+def _programar_cierre_de_sesiones(usuario_pk: int) -> None:
+    """Se ejecuta al confirmar la transacción, ya sin candados."""
+    transaction.on_commit(lambda: _cerrar_sesiones(usuario_pk), robust=True)
 
 
 def _datos(usuario) -> dict:
@@ -424,22 +494,25 @@ def _etiqueta(usuario) -> str:
 def crear_usuario(actor_pk, *, nombre, correo, rol, contrasena, numero_nomina=None, ip=None):
     """Crea un usuario. Solo el administrador asigna contraseñas: la escribe él (o quien crea
     el primer administrador con `crear_admin`) y pasa por los validadores. `actor_pk=None` es
-    el Sistema. La contraseña no se devuelve ni se registra en ningún evento."""
+    el Sistema. La contraseña no se devuelve ni se registra en ningún evento.
+
+    El hash (Argon2) se calcula ANTES de abrir la sección crítica; dentro se revalida al actor y
+    los duplicados."""
     if rol not in Usuario.Rol.values:
         raise DatosDeUsuarioInvalidos("El rol no es válido.")
     campos = _limpiar_campos({"nombre": nombre, "correo": correo, "numero_nomina": numero_nomina})
+    _verificar_duplicados(campos["correo"], campos["numero_nomina"])  # rápido, sin candados
+    _validar_contrasena(contrasena, Usuario(nombre=campos["nombre"], correo=campos["correo"]))
+    cifrada = make_password(contrasena)
     try:
-        with transaction.atomic():
-            actor, _, _ = _bloquear_administradores(actor_pk)
+        with _seccion_critica():
+            actor, _, _ = _bloquear(actor_pk)
             _verificar_duplicados(campos["correo"], campos["numero_nomina"])
-            _validar_contrasena(
-                contrasena, Usuario(nombre=campos["nombre"], correo=campos["correo"])
-            )
             usuario = Usuario.objects.create_user(
                 campos["correo"],
                 campos["nombre"],
                 rol,
-                password=contrasena,
+                contrasena_cifrada=cifrada,
                 numero_nomina=campos["numero_nomina"],
             )
             registrar_evento(
@@ -458,8 +531,8 @@ def editar_usuario(actor_pk, objetivo_pk, campos: dict, ip=None) -> Usuario:
     """Edita nombre, correo y/o numero_nomina. Sin cambios reales no hay escritura ni evento."""
     limpios = _limpiar_campos(campos)
     try:
-        with transaction.atomic():
-            actor, objetivo, _ = _bloquear_administradores(actor_pk, objetivo_pk)
+        with _seccion_critica():
+            actor, objetivo, _ = _bloquear(actor_pk, objetivo_pk)
             cambios = {k: v for k, v in limpios.items() if getattr(objetivo, k) != v}
             if not cambios:
                 return objetivo
@@ -486,8 +559,8 @@ def editar_usuario(actor_pk, objetivo_pk, campos: dict, ip=None) -> Usuario:
 def cambiar_rol(actor_pk, objetivo_pk, nuevo_rol: str, ip=None) -> Usuario:
     if nuevo_rol not in Usuario.Rol.values:
         raise DatosDeUsuarioInvalidos("El rol no es válido.")
-    with transaction.atomic():
-        actor, objetivo, administradores = _bloquear_administradores(actor_pk, objetivo_pk)
+    with _seccion_critica():
+        actor, objetivo, administradores = _bloquear(actor_pk, objetivo_pk)
         _no_a_si_mismo(actor, objetivo)
         if objetivo.rol == nuevo_rol:
             return objetivo
@@ -510,8 +583,8 @@ def cambiar_rol(actor_pk, objetivo_pk, nuevo_rol: str, ip=None) -> Usuario:
 
 
 def desactivar_usuario(actor_pk, objetivo_pk, ip=None) -> Usuario:
-    with transaction.atomic():
-        actor, objetivo, administradores = _bloquear_administradores(actor_pk, objetivo_pk)
+    with _seccion_critica():
+        actor, objetivo, administradores = _bloquear(actor_pk, objetivo_pk)
         _no_a_si_mismo(actor, objetivo)
         if not objetivo.activo:
             return objetivo
@@ -519,7 +592,7 @@ def desactivar_usuario(actor_pk, objetivo_pk, ip=None) -> Usuario:
             _garantizar_administrador_restante(administradores, objetivo.pk)
         objetivo.activo = False
         objetivo.save(update_fields=["activo"])
-        invalidar_sesiones(objetivo.pk)
+        _programar_cierre_de_sesiones(objetivo.pk)
         registrar_evento(
             TipoEvento.USUARIO_DESACTIVADO,
             actor,
@@ -533,8 +606,8 @@ def desactivar_usuario(actor_pk, objetivo_pk, ip=None) -> Usuario:
 
 def reactivar_usuario(actor_pk, objetivo_pk, ip=None) -> Usuario:
     """Reactiva la cuenta. No es un desbloqueo: no toca intentos_fallidos ni bloqueado_hasta."""
-    with transaction.atomic():
-        actor, objetivo, _ = _bloquear_administradores(actor_pk, objetivo_pk)
+    with _seccion_critica():
+        actor, objetivo, _ = _bloquear(actor_pk, objetivo_pk)
         if objetivo.activo:
             return objetivo
         objetivo.activo = True
@@ -557,17 +630,32 @@ def restablecer_contrasena(actor_pk, objetivo_pk, contrasena, ip=None, solo_rol=
 
     Un administrador no puede restablecerse a sí mismo por aquí: su vía es cambiar-contrasena,
     que pide la contraseña actual. NO modifica intentos_fallidos ni bloqueado_hasta: sería un
-    desbloqueo manual, descartado por decisión del equipo. Cierra las sesiones del afectado."""
-    with transaction.atomic():
-        actor, objetivo, _ = _bloquear_administradores(actor_pk, objetivo_pk)
+    desbloqueo manual, descartado por decisión del equipo. Cierra las sesiones del afectado
+    (al confirmar la transacción).
+
+    Validación y hash (Argon2) ocurren ANTES de la sección crítica, con una lectura previa del
+    objetivo. Dentro se revalida todo con el objetivo ya bloqueado: si su nombre o correo
+    cambiaron, se vuelven a pasar los validadores (el hash no depende de ellos)."""
+    previo = Usuario.objects.filter(pk=objetivo_pk).first()
+    if previo is None:
+        raise UsuarioInexistente
+    if actor_pk is not None and actor_pk == previo.pk:
+        raise AutoModificacionNoPermitida
+    if solo_rol is not None and previo.rol != solo_rol:
+        raise DatosDeUsuarioInvalidos("El usuario no es administrador.")
+    _validar_contrasena(contrasena, previo)
+    cifrada = make_password(contrasena)
+    with _seccion_critica():
+        actor, objetivo, _ = _bloquear(actor_pk, objetivo_pk)
         if actor is not None:
             _no_a_si_mismo(actor, objetivo)
         if solo_rol is not None and objetivo.rol != solo_rol:
             raise DatosDeUsuarioInvalidos("El usuario no es administrador.")
-        _validar_contrasena(contrasena, objetivo)
-        objetivo.set_password(contrasena)
+        if (objetivo.nombre, objetivo.correo) != (previo.nombre, previo.correo):
+            _validar_contrasena(contrasena, objetivo)
+        objetivo.password = cifrada
         objetivo.save(update_fields=["password"])
-        invalidar_sesiones(objetivo.pk)
+        _programar_cierre_de_sesiones(objetivo.pk)
         origen = " por comando de servidor" if actor is None else ""
         registrar_evento(
             TipoEvento.USUARIO_CONTRASENA_RESTABLECIDA,
