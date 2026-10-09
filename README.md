@@ -76,6 +76,12 @@ automatizadas) y obliga a cambiarla al primer inicio de sesión. Después, el ad
 usuarios en `/api/v1/usuarios/`: la contraseña temporal de un usuario nuevo o restablecido se muestra
 **una sola vez** en la respuesta. No hay borrado ni desbloqueo manual de cuentas.
 
+## Bitácora
+
+`GET /api/v1/bitacora/eventos/` (solo administrador): paginación por cursor (`tamano`, máximo 100; sigue
+el `next` de la respuesta) y filtros `desde`, `hasta` (fechas locales `AAAA-MM-DD`), `usuario` (id o `sistema`),
+`tipo` (repetible o separado por comas) e `instrumento_id`. Es de solo lectura y consultarla no genera eventos.
+
 ## Producción
 
 **El sistema se instala solo en red interna o VPN, nunca expuesto directo a internet** (el bloqueo de cuentas y el límite de tasa asumen un atacante con pocas IPs).

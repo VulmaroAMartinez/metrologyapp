@@ -15,7 +15,7 @@ DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["test_*.py"]
 # proxytests/ requiere el stack real: se ejecuta con `make test-proxy`.
 testpaths = ["apps", "config"]
-addopts = "--ds=config.settings.test -p no:cacheprovider --cov=apps --cov=config --cov-report=term-missing --cov-fail-under=85"
+addopts = "--ds=config.settings.test --durations=10 -p no:cacheprovider --cov=apps --cov=config --cov-report=term-missing --cov-fail-under=85"
 
 [tool.coverage.run]
 omit = ["*/tests/*", "config/wsgi.py"]

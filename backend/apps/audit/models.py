@@ -74,7 +74,9 @@ class Evento(models.Model):
 
     class Meta:
         indexes = [
-            models.Index(fields=["ocurrido_en"], name="evento_ocurrido_en_idx"),
+            # Paginación por cursor de la bitácora: ORDER BY ocurrido_en DESC, id DESC. Su primer
+            # campo también cubre las búsquedas por rango de fechas.
+            models.Index(fields=["-ocurrido_en", "-id"], name="evento_ocurrido_id_idx"),
             models.Index(fields=["usuario"], name="evento_usuario_idx"),
             models.Index(fields=["tipo"], name="evento_tipo_idx"),
             models.Index(fields=["instrumento_id"], name="evento_instrumento_idx"),

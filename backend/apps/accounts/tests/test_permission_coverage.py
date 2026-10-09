@@ -42,6 +42,8 @@ REGISTRO = {
     "api/v1/usuarios/<int:pk>/desactivar/": ({"POST"}, "GESTIONAR_USUARIOS"),
     "api/v1/usuarios/<int:pk>/reactivar/": ({"POST"}, "GESTIONAR_USUARIOS"),
     "api/v1/usuarios/<int:pk>/restablecer-contrasena/": ({"POST"}, "GESTIONAR_USUARIOS"),
+    # Bitácora (commit 9): solo lectura, solo ADMIN.
+    "api/v1/bitacora/eventos/": ({"GET"}, "VER_BITACORA"),
     "api/v1/schema/": ({"GET"}, PUBLICO),  # vista de Django (no DRF): solo se sirve en desarrollo
 }
 # Vistas que no son DRF y por tanto no pueden declarar permission_classes. Revisión manual.

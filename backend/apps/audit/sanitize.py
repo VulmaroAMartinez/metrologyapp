@@ -53,3 +53,11 @@ def _valor(clave, valor):
             raise DatosEventoInvalidosError(f"El valor de '{clave}' tiene forma de hash.")
         return valor
     raise DatosEventoInvalidosError(f"El valor de '{clave}' debe ser un escalar.")
+
+
+def solo_permitidos(datos):
+    """Defensa en profundidad al LEER: aunque una fila antigua o insertada por otra vía tuviera
+    claves fuera de la lista blanca, la bitácora nunca las muestra."""
+    if not isinstance(datos, Mapping):
+        return None if datos is None else {}
+    return {clave: valor for clave, valor in datos.items() if clave in CAMPOS_PERMITIDOS}

@@ -177,11 +177,11 @@ def test_indexes_and_constraint_exist_in_the_database():
         restricciones = connection.introspection.get_constraints(cursor, "audit_evento")
 
     indices = {tuple(c["columns"]) for c in restricciones.values() if c["index"]}
-    for columnas in [("ocurrido_en",), ("usuario_id",), ("tipo",), ("instrumento_id",)]:
+    for columnas in [("ocurrido_en", "id"), ("usuario_id",), ("tipo",), ("instrumento_id",)]:
         assert columnas in indices, columnas
     assert restricciones["evento_tipo_valido"]["check"] is True
     nombres = set(restricciones)
-    assert {"evento_ocurrido_en_idx", "evento_tipo_idx", "evento_instrumento_idx"} <= nombres
+    assert {"evento_ocurrido_id_idx", "evento_tipo_idx", "evento_instrumento_idx"} <= nombres
 
 
 def test_the_migration_refuses_to_run_if_notice_events_exist():

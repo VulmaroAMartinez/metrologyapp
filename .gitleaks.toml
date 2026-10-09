@@ -14,3 +14,11 @@ condition = "AND"
 regexTarget = "line"
 paths = ['''backend/.*/tests/.*\.py$''']
 regexes = ['''(DEFAULT_PASSWORD|SECRET)\s*=\s*"[^"]+"''']
+
+# Falso positivo: pruebas que comprueban que NO se puede ordenar por columnas sensibles.
+[[allowlists]]
+description = "Parámetros de orden prohibidos en pruebas"
+condition = "AND"
+regexTarget = "line"
+paths = ['''backend/apps/accounts/tests/test_usuarios_api\.py$''']
+regexes = ['''orden=(password|intentos_fallidos)''']
