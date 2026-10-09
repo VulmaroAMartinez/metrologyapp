@@ -79,6 +79,8 @@ LOGIN_MAX_FAILED_ATTEMPTS = env.int("LOGIN_MAX_FAILED_ATTEMPTS", default=5)
 LOGIN_LOCKOUT_MINUTES = env.int("LOGIN_LOCKOUT_MINUTES", default=15)
 LOGIN_RATE_PER_IP_EMAIL = env.int("LOGIN_RATE_PER_IP_EMAIL", default=5)  # por minuto
 LOGIN_RATE_PER_IP = env.int("LOGIN_RATE_PER_IP", default=20)  # por minuto
+# cambiar-contrasena: intentos por minuto y por usuario (ajuste propio, no el del login).
+PASSWORD_CHANGE_RATE_PER_USER = env.int("PASSWORD_CHANGE_RATE_PER_USER", default=5)
 
 # Espera máxima de candados en las operaciones de administración (SET LOCAL lock_timeout). Si
 # vence, la operación se revierte entera y se responde "reintenta" (503 `reintentar`).

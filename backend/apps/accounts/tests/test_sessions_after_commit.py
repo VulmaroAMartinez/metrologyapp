@@ -164,3 +164,17 @@ def test_a_failed_operation_closes_no_session(operacion, usuario, tecnico, relax
     assert Evento.objects.count() == antes
     assert Session.objects.filter(session_key=sesion.session_cookie).exists()
     assert sesion.get(ME).status_code == 200  # nada cambió: la sesión sigue valiendo
+
+
+def test_reactivating_closes_the_stale_sessions_a_failed_cleanup_left_behind(admin_api, tecnico):
+    """Sin esto, reactivar tras un borrado fallido hacía valer otra vez la sesión vieja."""
+    sesion = abrir(tecnico)
+    with limpieza_que_falla():
+        admin_api.post(ruta(tecnico.pk, "desactivar"))
+    assert sesion.get(ME).status_code == 401
+    assert Session.objects.filter(session_key=sesion.session_cookie).exists()  # quedó la fila
+
+    admin_api.post(ruta(tecnico.pk, "reactivar"))  # esta vez la limpieza funciona
+
+    assert sesion.get(ME).status_code == 401  # no revive
+    assert not Session.objects.filter(session_key=sesion.session_cookie).exists()

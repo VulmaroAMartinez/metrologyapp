@@ -1,11 +1,19 @@
 from datetime import UTC
 
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from .models import TipoEvento
 from .sanitize import solo_permitidos
 from .services import SISTEMA, TAMANO_MAXIMO, TAMANO_POR_DEFECTO, FiltrosEventos
+
+
+class UsuarioDeEventoSerializer(serializers.Serializer):
+    """Del usuario solo se muestran id y nombre."""
+
+    id = serializers.IntegerField()
+    nombre = serializers.CharField()
 
 
 class EventoSerializer(serializers.Serializer):
@@ -22,20 +30,25 @@ class EventoSerializer(serializers.Serializer):
     ip = serializers.CharField(allow_null=True)
     instrumento_id = serializers.IntegerField(allow_null=True)
 
+    @extend_schema_field(serializers.DateTimeField())
     def get_ocurrido_en(self, evento):
         return evento.ocurrido_en.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
+    @extend_schema_field(serializers.DateTimeField())
     def get_ocurrido_en_local(self, evento):
         return timezone.localtime(evento.ocurrido_en).isoformat()
 
+    @extend_schema_field(UsuarioDeEventoSerializer(allow_null=True))
     def get_usuario(self, evento):
         if evento.usuario_id is None:
             return None  # Sistema
         return {"id": evento.usuario_id, "nombre": evento.usuario.nombre}
 
+    @extend_schema_field(serializers.DictField(allow_null=True))
     def get_antes(self, evento):
         return solo_permitidos(evento.antes)
 
+    @extend_schema_field(serializers.DictField(allow_null=True))
     def get_despues(self, evento):
         return solo_permitidos(evento.despues)
 
@@ -46,6 +59,7 @@ class FiltrosBitacoraSerializer(serializers.Serializer):
     usuario = serializers.CharField(required=False, max_length=20)
     instrumento_id = serializers.IntegerField(required=False, min_value=1)
     cursor = serializers.CharField(required=False, max_length=500)
+    tamano = serializers.IntegerField(required=False, min_value=1, max_value=TAMANO_MAXIMO)
 
     def validate_usuario(self, valor):
         if valor.lower() == SISTEMA:
@@ -62,7 +76,8 @@ class FiltrosBitacoraSerializer(serializers.Serializer):
 
 def interpretar_consulta(parametros):
     """(filtros, texto_del_cursor, tamano) a partir de los parámetros de la URL; los inválidos
-    lanzan ValidationError (400 datos_invalidos)."""
+    (incluido `tamano` no entero, menor que 1 o mayor que el máximo) lanzan ValidationError
+    (400 datos_invalidos)."""
     simples = {
         clave: parametros[clave]
         for clave in FiltrosBitacoraSerializer().fields
@@ -84,13 +99,6 @@ def interpretar_consulta(parametros):
             {"tipo": [f"Tipo de evento desconocido: {desconocidos[0]}"]}
         )
 
-    try:
-        tamano = int(parametros.get("tamano", TAMANO_POR_DEFECTO))
-    except ValueError:
-        tamano = TAMANO_POR_DEFECTO
-    if tamano < 1:
-        tamano = TAMANO_POR_DEFECTO
-
     filtros = FiltrosEventos(
         desde=datos.get("desde"),
         hasta=datos.get("hasta"),
@@ -98,4 +106,4 @@ def interpretar_consulta(parametros):
         tipos=tipos,
         instrumento_id=datos.get("instrumento_id"),
     )
-    return filtros, datos.get("cursor"), min(tamano, TAMANO_MAXIMO)
+    return filtros, datos.get("cursor"), datos.get("tamano", TAMANO_POR_DEFECTO)

@@ -170,15 +170,12 @@ def test_nomina_must_be_unique_when_present():
         make(correo="b@e.test", numero_nomina="12345")
 
 
-def test_nomina_unique_constraint_also_stops_bulk_inserts_of_empty_strings():
-    # Un "" que llegue sin pasar por save() no es NULL: la restricción lo trata como valor.
-    Usuario.objects.bulk_create(
-        [Usuario(correo="a@e.test", nombre="A", rol="ADMIN", numero_nomina="")]
-    )
-
-    with pytest.raises(IntegrityError, match="usuario_nomina_unica"), transaction.atomic():
+def test_an_empty_payroll_number_never_reaches_the_database():
+    # Un "" que llegue sin pasar por save() no es NULL: el CHECK de la base lo rechaza (la nómina
+    # que no existe es NULL, nunca una cadena vacía).
+    with pytest.raises(IntegrityError, match="usuario_nomina_ascii"), transaction.atomic():
         Usuario.objects.bulk_create(
-            [Usuario(correo="b@e.test", nombre="B", rol="ADMIN", numero_nomina="")]
+            [Usuario(correo="a@e.test", nombre="A", rol="ADMIN", numero_nomina="")]
         )
 
 

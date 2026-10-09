@@ -7,7 +7,7 @@ export MSYS_NO_PATHCONV := 1
 COMPOSE := docker compose -f deploy/docker-compose.yml --env-file .env
 MIGRATE := $(COMPOSE) --profile tools run --rm --build migrate
 
-.PHONY: help up down logs migrate fmt lock audit check-containers test test-proxy lint ci secrets
+.PHONY: help up down logs migrate fmt lock audit schema check-containers test test-proxy lint ci secrets
 
 help: ## Lista de comandos
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/ -/'
@@ -50,6 +50,9 @@ audit: ## Auditoría de dependencias (pip-audit) contra los archivos con hashes;
 	docker compose -f deploy/docker-compose.yml --env-file .env.example --profile tools build test
 	docker run --rm --read-only --tmpfs /tmp -e HOME=/tmp -e XDG_CACHE_HOME=/tmp metrologia-test sh -c "pip-audit -r requirements.txt --require-hashes --disable-pip && pip-audit -r requirements-dev.txt --require-hashes --disable-pip"
 
+schema: ## Valida el contrato OpenAPI (drf-spectacular: --validate --fail-on-warn)
+	docker compose -f deploy/docker-compose.yml --env-file .env.example --profile tools run --rm --build --no-deps test python manage.py spectacular --validate --fail-on-warn --file /tmp/schema.yml
+
 check-containers: ## Verifica la seguridad de los contenedores del entorno de desarrollo en ejecución
 	sh deploy/verificar_contenedores.sh metrologia
 
@@ -61,4 +64,4 @@ lint: ## Valida compose y Caddyfile, y ruff del backend
 	docker compose -f deploy/docker-compose.yml --env-file .env.example config -q
 	docker run --rm --env-file .env.example -v "$(CURDIR)/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.11.7-alpine caddy validate --config /etc/caddy/Caddyfile
 
-ci: lint audit test test-proxy secrets ## Todo lo anterior; falla ante cualquier problema
+ci: lint schema audit test test-proxy secrets ## Todo lo anterior; falla ante cualquier problema

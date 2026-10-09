@@ -174,14 +174,23 @@ def test_order_is_newest_first_and_page_size_defaults_to_25(api_admin):
     assert marcas == sorted(marcas, reverse=True)
 
 
-def test_page_size_is_configurable_capped_at_100_and_falls_back_when_invalid(api_admin):
+def test_page_size_is_configurable_up_to_100_and_defaults_to_25(api_admin):
     sembrar(130)
 
     assert len(pedir(api_admin, "tamano=10").json()["results"]) == 10
     assert len(pedir(api_admin, "tamano=100").json()["results"]) == 100
-    assert len(pedir(api_admin, "tamano=1000").json()["results"]) == 100
-    for invalido in ("0", "-3", "abc", ""):
-        assert len(pedir(api_admin, f"tamano={invalido}").json()["results"]) == 25
+    assert len(pedir(api_admin, "").json()["results"]) == 25
+
+
+@pytest.mark.parametrize("invalido", ["0", "-3", "abc", "", "1.5", "101", "1000"])
+def test_an_invalid_page_size_is_400_datos_invalidos_and_never_trimmed(api_admin, invalido):
+    sembrar(5)
+
+    respuesta = pedir(api_admin, f"tamano={invalido}")
+
+    assert respuesta.status_code == 400
+    assert respuesta.json()["codigo"] == "datos_invalidos"
+    assert list(respuesta.json()["campos"]) == ["tamano"]
 
 
 def test_walking_every_page_has_no_duplicates_and_no_gaps(api_admin):
@@ -334,7 +343,7 @@ def test_invalid_parameters_are_400_with_a_clear_code(api_admin, consulta):
 
     assert respuesta.status_code == 400
     assert respuesta.json()["codigo"] == "datos_invalidos"
-    assert set(respuesta.json()) == {"codigo", "detalle"}
+    assert set(respuesta.json()) == {"codigo", "detalle", "campos"}
 
 
 # --- rango de fechas: límites del día local y cambio de horario ---

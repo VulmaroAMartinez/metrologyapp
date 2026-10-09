@@ -289,7 +289,7 @@ def test_create_requires_the_password(api_admin):
     respuesta = api_admin.post(BASE, cuerpo)
 
     assert respuesta.status_code == 400
-    assert "contrasena" in respuesta.json()["detalle"]
+    assert "contrasena" in respuesta.json()["campos"]
 
 
 @pytest.mark.parametrize(
@@ -306,7 +306,7 @@ def test_create_runs_the_password_through_the_validators(api_admin, contrasena, 
 
     assert respuesta.status_code == 400
     assert respuesta.json()["codigo"] == "datos_invalidos"
-    assert fragmento in respuesta.json()["detalle"]
+    assert any(fragmento in m for m in respuesta.json()["campos"]["contrasena"])
     assert contrasena not in respuesta.content.decode()  # el mensaje no repite la contraseña
     assert Usuario.objects.count() == 1
     assert not Evento.objects.filter(tipo="USUARIO_CREADO").exists()
@@ -532,7 +532,7 @@ def test_reset_requires_the_password_and_runs_the_validators(api_admin):
 
     assert sin_clave.status_code == 400
     assert debil.status_code == 400
-    assert "muy común" in debil.json()["detalle"]
+    assert any("muy común" in m for m in debil.json()["campos"]["contrasena"])
     assert similar.status_code == 400
     assert "qwertyuiop" not in debil.content.decode()
     assert Api().login(objetivo.correo, DEFAULT_PASSWORD).status_code == 200  # no cambió

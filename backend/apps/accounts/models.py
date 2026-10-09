@@ -6,6 +6,8 @@ from django.db.models.functions import Lower
 
 from .managers import UsuarioManager
 
+SOLO_ASCII = r"^[\x01-\x7f]+$"
+
 
 class Usuario(AbstractBaseUser):
     """Usuario del sistema. No hay is_staff ni is_superuser: administrar = rol ADMIN.
@@ -51,6 +53,15 @@ class Usuario(AbstractBaseUser):
             models.CheckConstraint(
                 condition=models.Q(intentos_fallidos__gte=0),
                 name="usuario_intentos_no_negativos",
+            ),
+            # Decisión de Vul: correo y numero_nomina solo ASCII (los servicios lo validan primero).
+            models.CheckConstraint(
+                condition=models.Q(correo__regex=SOLO_ASCII), name="usuario_correo_ascii"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(numero_nomina__isnull=True)
+                | models.Q(numero_nomina__regex=SOLO_ASCII),
+                name="usuario_nomina_ascii",
             ),
         ]
 

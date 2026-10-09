@@ -23,6 +23,7 @@ from django.db import IntegrityError, OperationalError, transaction
 from django.db.models import Case, DateTimeField, F, Q, Value, When
 from django.db.models.lookups import GreaterThanOrEqual
 from django.utils import timezone
+from rest_framework.exceptions import APIException
 
 from apps.audit.models import TipoEvento
 from apps.audit.services import registrar_evento
@@ -53,14 +54,6 @@ class MotivoFallo(StrEnum):
 class ResultadoLogin:
     usuario: Usuario | None
     motivo: MotivoFallo | None
-
-
-class ContrasenaActualIncorrecta(Exception):
-    pass
-
-
-class ContrasenaRepetida(Exception):
-    pass
 
 
 @functools.cache
@@ -214,7 +207,7 @@ def cambiar_contrasena(request, usuario_pk: int, actual: str, nueva: str) -> Usu
         raise ContrasenaActualIncorrecta
     if actual == nueva:
         raise ContrasenaRepetida
-    validate_password(nueva, usuario)  # ValidationError con los mensajes de los validadores
+    _validar_contrasena(nueva, usuario, "contrasena_nueva")
     nueva_cifrada = make_password(nueva)
 
     ip = client_ip(request)
@@ -254,20 +247,53 @@ NOMINA_MAX = 20
 CORREO_MAX = 254
 
 
-class ErrorDeUsuario(Exception):
-    """Error de negocio con código y estado HTTP; la vista lo traduce a {codigo, detalle}."""
+class ErrorDeUsuario(APIException):
+    """Error de negocio de la administración de usuarios y del cambio de contraseña.
+
+    Es una APIException: las vistas no lo capturan, el manejador de excepciones lo responde con
+    el sobre {codigo, detalle[, campos]} y el estado HTTP. `campos` ({campo: [mensajes]}) solo
+    cuando el error es de campo. Los servicios también se usan desde comandos de gestión, donde
+    es una excepción corriente (`detalle` es el texto). NO se usa en `iniciar_sesion`: un
+    inicio de sesión fallido no lanza (el contador y el evento se confirman con un 401)."""
 
     codigo = "error"
     estado = 400
     detalle = "Operación no permitida."
 
-    def __init__(self, detalle=None):
-        self.detalle = detalle or self.detalle
-        super().__init__(self.detalle)
+    def __init__(self, detalle=None, *, campos=None):
+        self.detalle = detalle or type(self).detalle
+        self.campos = campos
+        cuerpo = {"codigo": self.codigo, "detalle": self.detalle}
+        if campos:
+            cuerpo["campos"] = campos
+        super().__init__(detail=cuerpo)
+
+    @property
+    def status_code(self):
+        return self.estado
+
+    def __str__(self):
+        return str(self.detalle)
 
 
 class DatosDeUsuarioInvalidos(ErrorDeUsuario):
     codigo = "datos_invalidos"
+
+
+def _invalido(campo, mensaje):
+    return DatosDeUsuarioInvalidos(mensaje, campos={campo: [mensaje]})
+
+
+class ContrasenaActualIncorrecta(DatosDeUsuarioInvalidos):
+    def __init__(self):
+        mensaje = "La contraseña actual no es correcta."
+        super().__init__(mensaje, campos={"contrasena_actual": [mensaje]})
+
+
+class ContrasenaRepetida(DatosDeUsuarioInvalidos):
+    def __init__(self):
+        mensaje = "La contraseña nueva debe ser distinta."
+        super().__init__(mensaje, campos={"contrasena_nueva": [mensaje]})
 
 
 class CorreoDuplicado(ErrorDeUsuario):
@@ -336,28 +362,28 @@ def _limpiar_campos(campos: dict) -> dict:
     if "nombre" in campos:
         nombre = (campos["nombre"] or "").strip()
         if not nombre:
-            raise DatosDeUsuarioInvalidos("El nombre es obligatorio.")
+            raise _invalido("nombre", "El nombre es obligatorio.")
         if len(nombre) > NOMBRE_MAX:
-            raise DatosDeUsuarioInvalidos(f"El nombre admite hasta {NOMBRE_MAX} caracteres.")
+            raise _invalido("nombre", f"El nombre admite hasta {NOMBRE_MAX} caracteres.")
         limpios["nombre"] = nombre
     if "correo" in campos:
         correo = (campos["correo"] or "").strip().lower()
         if not correo.isascii():
-            raise DatosDeUsuarioInvalidos("El correo solo admite caracteres ASCII.")
+            raise _invalido("correo", "El correo solo admite caracteres ASCII.")
         try:
             validate_email(correo)
         except DjangoValidationError:
-            raise DatosDeUsuarioInvalidos("El correo no es válido.") from None
+            raise _invalido("correo", "El correo no es válido.") from None
         if len(correo) > CORREO_MAX:
-            raise DatosDeUsuarioInvalidos("El correo es demasiado largo.")
+            raise _invalido("correo", "El correo es demasiado largo.")
         limpios["correo"] = correo
     if "numero_nomina" in campos:
         nomina = (campos["numero_nomina"] or "").strip() or None
         if nomina is not None and not nomina.isascii():
-            raise DatosDeUsuarioInvalidos("El número de nómina solo admite caracteres ASCII.")
+            raise _invalido("numero_nomina", "El número de nómina solo admite caracteres ASCII.")
         if nomina is not None and len(nomina) > NOMINA_MAX:
-            raise DatosDeUsuarioInvalidos(
-                f"El número de nómina admite hasta {NOMINA_MAX} caracteres."
+            raise _invalido(
+                "numero_nomina", f"El número de nómina admite hasta {NOMINA_MAX} caracteres."
             )
         limpios["numero_nomina"] = nomina
     return limpios
@@ -432,13 +458,14 @@ def _no_a_si_mismo(actor, objetivo) -> None:
         raise AutoModificacionNoPermitida
 
 
-def _validar_contrasena(contrasena: str, usuario) -> None:
+def _validar_contrasena(contrasena: str, usuario, campo: str = "contrasena") -> None:
     """Pasa la contraseña por los validadores. Los mensajes describen la regla incumplida y
     nunca incluyen la contraseña; ella no se devuelve, ni se registra, ni va a un evento."""
     try:
         validate_password(contrasena, usuario)
     except DjangoValidationError as error:
-        raise DatosDeUsuarioInvalidos(" ".join(error.messages)) from None
+        mensajes = list(error.messages)
+        raise DatosDeUsuarioInvalidos(" ".join(mensajes), campos={campo: mensajes}) from None
 
 
 def invalidar_sesiones(usuario_pk: int) -> int:
@@ -499,7 +526,7 @@ def crear_usuario(actor_pk, *, nombre, correo, rol, contrasena, numero_nomina=No
     El hash (Argon2) se calcula ANTES de abrir la sección crítica; dentro se revalida al actor y
     los duplicados."""
     if rol not in Usuario.Rol.values:
-        raise DatosDeUsuarioInvalidos("El rol no es válido.")
+        raise _invalido("rol", "El rol no es válido.")
     campos = _limpiar_campos({"nombre": nombre, "correo": correo, "numero_nomina": numero_nomina})
     _verificar_duplicados(campos["correo"], campos["numero_nomina"])  # rápido, sin candados
     _validar_contrasena(contrasena, Usuario(nombre=campos["nombre"], correo=campos["correo"]))
@@ -558,7 +585,7 @@ def editar_usuario(actor_pk, objetivo_pk, campos: dict, ip=None) -> Usuario:
 
 def cambiar_rol(actor_pk, objetivo_pk, nuevo_rol: str, ip=None) -> Usuario:
     if nuevo_rol not in Usuario.Rol.values:
-        raise DatosDeUsuarioInvalidos("El rol no es válido.")
+        raise _invalido("rol", "El rol no es válido.")
     with _seccion_critica():
         actor, objetivo, administradores = _bloquear(actor_pk, objetivo_pk)
         _no_a_si_mismo(actor, objetivo)
@@ -612,6 +639,9 @@ def reactivar_usuario(actor_pk, objetivo_pk, ip=None) -> Usuario:
             return objetivo
         objetivo.activo = True
         objetivo.save(update_fields=["activo"])
+        # Si el borrado de sesiones al desactivar falló, una sesión vieja volvería a valer al
+        # reactivar: se cierra también aquí.
+        _programar_cierre_de_sesiones(objetivo.pk)
         registrar_evento(
             TipoEvento.USUARIO_REACTIVADO,
             actor,

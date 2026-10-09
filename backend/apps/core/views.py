@@ -3,7 +3,9 @@ import logging
 from django.conf import settings
 from django.db import DatabaseError, connection
 from django.http import Http404
+from drf_spectacular.utils import extend_schema, inline_serializer
 from drf_spectacular.views import SpectacularAPIView
+from rest_framework import serializers
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -11,6 +13,15 @@ from rest_framework.response import Response
 logger = logging.getLogger(__name__)
 
 
+@extend_schema(
+    operation_id="health",
+    tags=["salud"],
+    summary="Estado del servicio (solo `ok` o `error`)",
+    responses={
+        200: inline_serializer("Salud", {"status": serializers.CharField()}),
+        503: inline_serializer("SaludCaida", {"status": serializers.CharField()}),
+    },
+)
 @api_view(["GET"])
 @authentication_classes([])
 @permission_classes([AllowAny])

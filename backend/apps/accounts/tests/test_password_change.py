@@ -110,7 +110,8 @@ def test_wrong_current_password_is_rejected(api_admin, usuario):
     respuesta = cambiar(api_admin, actual="no-es-la-actual-1")
 
     assert respuesta.status_code == 400
-    assert respuesta.json()["codigo"] == "contrasena_actual_incorrecta"
+    assert respuesta.json()["codigo"] == "datos_invalidos"
+    assert list(respuesta.json()["campos"]) == ["contrasena_actual"]
     usuario.refresh_from_db()
     assert usuario.check_password(DEFAULT_PASSWORD)
 
@@ -119,7 +120,8 @@ def test_new_password_must_differ_from_the_current_one(api_admin):
     respuesta = cambiar(api_admin, nueva=DEFAULT_PASSWORD)
 
     assert respuesta.status_code == 400
-    assert respuesta.json()["codigo"] == "contrasena_repetida"
+    assert respuesta.json()["codigo"] == "datos_invalidos"
+    assert list(respuesta.json()["campos"]) == ["contrasena_nueva"]
 
 
 @pytest.mark.parametrize(
@@ -135,8 +137,8 @@ def test_new_password_goes_through_the_validators(api_admin, usuario, nueva, fra
     respuesta = cambiar(api_admin, nueva=nueva)
 
     assert respuesta.status_code == 400
-    assert respuesta.json()["codigo"] == "contrasena_invalida"
-    assert any(fragmento in mensaje for mensaje in respuesta.json()["detalle"])
+    assert respuesta.json()["codigo"] == "datos_invalidos"
+    assert any(fragmento in mensaje for mensaje in respuesta.json()["campos"]["contrasena_nueva"])
     assert nueva not in respuesta.content.decode()  # el mensaje no repite la contraseña
     usuario.refresh_from_db()
     assert usuario.check_password(DEFAULT_PASSWORD)
@@ -192,3 +194,32 @@ def test_a_view_without_declared_permissions_is_denied_even_with_a_valid_session
 
     assert respuesta.status_code == 403
     assert respuesta.json()["codigo"] == "permiso_denegado"
+
+
+# --- el límite de cambiar-contrasena tiene su propio ajuste -----------------------------------
+
+
+def test_the_change_rate_limit_defaults_to_5_per_minute(settings):
+    assert settings.PASSWORD_CHANGE_RATE_PER_USER == 5
+
+
+def test_the_change_rate_limit_has_its_own_setting(usuario, clock, settings):
+    settings.LOGIN_RATE_PER_IP_EMAIL = settings.LOGIN_RATE_PER_IP = 1000
+    settings.PASSWORD_CHANGE_RATE_PER_USER = 2
+    api = Api()
+    assert api.login(usuario.correo).status_code == 200
+
+    estados = [cambiar(api, actual="no-es-la-actual-1").status_code for _ in range(3)]
+
+    assert estados == [400, 400, 429]
+
+
+def test_the_login_rate_limit_does_not_touch_password_changes(usuario, clock, settings):
+    settings.LOGIN_RATE_PER_IP_EMAIL = settings.LOGIN_RATE_PER_IP = 1000
+    api = Api()
+    assert api.login(usuario.correo).status_code == 200
+    settings.LOGIN_RATE_PER_IP_EMAIL = 1  # un ajuste de login muy bajo...
+
+    estados = [cambiar(api, actual="no-es-la-actual-1").status_code for _ in range(4)]
+
+    assert 429 not in estados  # ...no limita el cambio de contraseña

@@ -223,9 +223,10 @@ def test_standard_error_shapes(api):
     assert (sin_sesion.status_code, sin_sesion.json()["codigo"]) == (401, "no_autenticado")
     assert (metodo.status_code, metodo.json()["codigo"]) == (405, "metodo_no_permitido")
     assert (invalido.status_code, invalido.json()["codigo"]) == (400, "datos_invalidos")
-    for respuesta in (sin_sesion, metodo, invalido):
+    for respuesta in (sin_sesion, metodo):
         assert set(respuesta.json()) == {"codigo", "detalle"}
-    assert "correo" in invalido.json()["detalle"]
+    assert set(invalido.json()) == {"codigo", "detalle", "campos"}  # error de campo
+    assert "correo" in invalido.json()["campos"]
 
 
 # --- denegaciones: sin evento, solo una línea de log sin datos sensibles ------------------------
