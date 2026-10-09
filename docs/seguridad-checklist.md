@@ -116,6 +116,23 @@ real y escaneo de secretos). Las pruebas marcadas «stack real» son de `make te
 | Control | Evidencia |
 | --- | --- |
 | Sin secretos en el repositorio ni en el historial (gitleaks, historial y archivos) | `make secrets` |
-| `.env` fuera de git y todos los secretos de `.env.example` marcados como de ejemplo y rechazados por producción (ver también la sección 6) | `config/tests/test_prod_settings.py::test_the_env_example_value_is_rejected_by_prod`, `git check-ignore .env` |
+| `.env` fuera de git y todos los secretos de `.env.example` marcados como de ejemplo y rechazados por producción (ver también la sección 6) | `git check-ignore .env` |
 | Dependencias bloqueadas con hashes, instaladas con `--require-hashes` y auditadas con pip-audit | `make audit`, `make lock` |
 | Cobertura de código ≥ 85 % (incluye `settings/prod.py`, medido también en subprocesos) | `make test` |
+
+## 11. Correcciones de la revisión del sprint 1
+
+| Control | Evidencia |
+| --- | --- |
+| Vida máxima absoluta de la sesión (12 h, configurable; la actividad no la extiende; sin marca de inicio no se acepta; sin evento) | `apps/accounts/tests/test_session_absolute.py::test_activity_cannot_keep_a_session_alive_past_12_hours`, `apps/accounts/tests/test_session_absolute.py::test_the_limit_is_exact_and_configurable`, `apps/accounts/tests/test_session_absolute.py::test_a_session_without_a_start_time_is_rejected`, `apps/accounts/tests/test_session_absolute.py::test_expiring_writes_no_event`, `config/tests/test_prod_settings.py::test_the_absolute_session_lifetime_defaults_to_12_hours_and_is_configurable` |
+| Correo y número de nómina solo ASCII | `apps/accounts/tests/test_ascii_identifiers.py::test_create_rejects_a_non_ascii_email`, `apps/accounts/tests/test_ascii_identifiers.py::test_edit_rejects_a_non_ascii_payroll_number` |
+| Producción rechaza `ALLOWED_HOSTS` con `*`, `DB_PASSWORD` vacío y proxies no privados o IPv4 mapeados | `config/tests/test_prod_settings.py::test_validator_rejects_insecure_values` |
+| Una sola fuente para la lista de proxies por defecto | `config/tests/test_deploy_files.py::test_the_default_proxy_list_lives_only_in_guards` |
+| HSTS corto por defecto, configurable y sin preload | `config/tests/test_prod_settings.py::test_hsts_is_short_by_default_without_subdomains_or_preload`, `config/tests/test_prod_settings.py::test_hsts_seconds_and_subdomains_are_configurable`, `config/tests/test_prod_settings.py::test_hsts_preload_cannot_be_switched_on_from_the_environment` |
+| La API solo acepta JSON (415 para formularios y multipart) | `apps/core/tests/test_parsers.py::test_non_json_bodies_get_415_even_with_a_valid_csrf_token` |
+| Límite de tasa: identificador protegido con HMAC(SECRET_KEY) | `apps/core/tests/test_ratelimit.py::test_the_cache_key_is_not_a_plain_hash_of_the_identifier`, `apps/core/tests/test_ratelimit.py::test_the_cache_key_depends_on_the_secret_key` |
+| `Evento`: `save()` nunca hace UPDATE y `_base_manager` está protegido (con los roles `migrator` y `app`) | `apps/audit/tests/test_evento_model.py::test_saving_with_an_existing_pk_inserts_and_never_updates`, `apps/audit/tests/test_evento_model.py::test_the_base_manager_is_the_protected_one`, `apps/audit/tests/test_real_db_roles.py::test_the_orm_cannot_alter_events_as_the_app_role` |
+| Base de datos y frontend en redes `internal`; solo `api` con salida | `config/tests/test_deploy_files.py::test_every_network_of_the_database_is_internal`, `config/tests/test_deploy_files.py::test_only_api_can_reach_the_outside`, `make check-containers` |
+| El archivo de secretos de `test-proxy` está ignorado y la clave del administrador no va en la línea de comandos | `config/tests/test_deploy_files.py::test_the_proxytest_secrets_file_is_ignored_by_git`, `config/tests/test_deploy_files.py::test_proxytest_never_puts_the_admin_password_on_a_command_line` |
+| `make` bajo Git Bash no crea carpetas basura (`backend;C`) | `config/tests/test_deploy_files.py::test_the_makefile_disables_msys_path_conversion` |
+| Hook de archivos protegidos: rutas de Windows y POSIX, `.env*`, `secrets/`, y falla cerrado sin `jq` | `config/tests/test_hook_proteger_archivos.py::test_protected_paths_are_blocked`, `config/tests/test_hook_proteger_archivos.py::test_it_blocks_when_jq_is_missing`, `config/tests/test_hook_proteger_archivos.py::test_it_blocks_when_the_input_has_no_readable_path` |

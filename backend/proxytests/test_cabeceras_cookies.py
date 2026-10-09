@@ -25,7 +25,7 @@ def verificar_cabeceras(cabeceras, *, hsts, contexto=""):
     assert cabeceras["cache-control"] == "no-store", contexto
     assert "server" not in cabeceras, contexto  # no revela el software
     if hsts:
-        assert cabeceras["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+        assert cabeceras["strict-transport-security"] == "max-age=3600"
     else:
         assert "strict-transport-security" not in cabeceras, contexto  # HSTS solo sobre HTTPS
 
@@ -173,7 +173,7 @@ def test_production_security_headers_include_hsts_and_frame_denial(produccion):
         estado, cabeceras, _ = produccion.pedir(metodo, ruta, cuerpo)
 
         assert estado in {200, 401}, (ruta, estado)
-        assert cabeceras["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+        assert cabeceras["strict-transport-security"] == "max-age=3600"
         assert cabeceras["x-frame-options"] == "DENY", ruta
         assert cabeceras["x-content-type-options"] == "nosniff", ruta
         assert cabeceras["referrer-policy"] == "same-origin", ruta

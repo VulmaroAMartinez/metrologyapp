@@ -118,7 +118,7 @@ HTTPS = ["csrf", "health", "me_401", "login_401", "login_200", "usuarios", "bita
 def test_https_responses_carry_the_production_security_headers(prod, nombre):
     cabeceras = prod[nombre]["cabeceras"]
 
-    assert cabeceras["strict-transport-security"] == "max-age=31536000; includeSubDomains"
+    assert cabeceras["strict-transport-security"] == "max-age=3600"
     assert cabeceras["x-frame-options"] == "DENY"
     assert cabeceras["x-content-type-options"] == "nosniff"
     assert cabeceras["referrer-policy"] == "same-origin"

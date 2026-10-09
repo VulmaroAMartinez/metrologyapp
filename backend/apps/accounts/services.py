@@ -296,7 +296,8 @@ class UsuarioInexistente(ErrorDeUsuario):
 
 def _limpiar_campos(campos: dict) -> dict:
     """Normaliza y valida solo los campos presentes: correo en minúsculas y sin espacios,
-    nombre obligatorio, numero_nomina vacío -> None."""
+    nombre obligatorio, numero_nomina vacío -> None. Correo y numero_nomina solo admiten ASCII
+    (decisión de Vul): `.lower()` de Python y `LOWER()` de PostgreSQL difieren fuera de ASCII."""
     limpios = {}
     if "nombre" in campos:
         nombre = (campos["nombre"] or "").strip()
@@ -307,6 +308,8 @@ def _limpiar_campos(campos: dict) -> dict:
         limpios["nombre"] = nombre
     if "correo" in campos:
         correo = (campos["correo"] or "").strip().lower()
+        if not correo.isascii():
+            raise DatosDeUsuarioInvalidos("El correo solo admite caracteres ASCII.")
         try:
             validate_email(correo)
         except DjangoValidationError:
@@ -316,6 +319,8 @@ def _limpiar_campos(campos: dict) -> dict:
         limpios["correo"] = correo
     if "numero_nomina" in campos:
         nomina = (campos["numero_nomina"] or "").strip() or None
+        if nomina is not None and not nomina.isascii():
+            raise DatosDeUsuarioInvalidos("El número de nómina solo admite caracteres ASCII.")
         if nomina is not None and len(nomina) > NOMINA_MAX:
             raise DatosDeUsuarioInvalidos(
                 f"El número de nómina admite hasta {NOMINA_MAX} caracteres."

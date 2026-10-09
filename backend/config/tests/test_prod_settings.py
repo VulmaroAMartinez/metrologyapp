@@ -68,6 +68,10 @@ def test_valid_configuration_is_accepted():
     [
         ({"debug": True}, "DJANGO_DEBUG"),
         ({"allowed_hosts": []}, "ALLOWED_HOSTS"),
+        ({"allowed_hosts": ["*"]}, "ALLOWED_HOSTS"),
+        ({"allowed_hosts": ["metrologia.example.com", "*"]}, "ALLOWED_HOSTS"),
+        ({"db_password": ""}, "DB_PASSWORD"),
+        ({"db_password": "   "}, "DB_PASSWORD"),
         ({"secret_key": "EJEMPLO-lo-que-sea"}, "SECRET_KEY"),
         ({"secret_key": "corta"}, "SECRET_KEY"),
         ({"db_password": "EJEMPLO-cambia-app"}, "DB_PASSWORD"),
@@ -89,6 +93,11 @@ def test_validator_rejects_insecure_values(override, expected):
         (["0.0.0.0/0"], "demasiado amplio"),
         (["::/0"], "demasiado amplio"),
         (["2001:db8::/32"], "demasiado amplio"),
+        (["8.8.0.0/16"], "no es una red privada"),
+        (["172.28.0.0/24", "52.0.0.0/16"], "52.0.0.0/16"),
+        (["2001:4860::/64"], "no es una red privada"),
+        (["::ffff:0:0/96"], "IPv4 mapeado"),
+        (["::ffff:10.0.0.0/104"], "IPv4 mapeado"),
         (["no-es-un-cidr"], "inválido"),
         ([], "vacío"),
         (["", "  "], "vacío"),
@@ -108,6 +117,8 @@ def test_validator_rejects_broad_empty_or_invalid_trusted_proxies(cidrs, fragmen
         ["172.18.0.0/16"],
         ["127.0.0.1/32"],
         ["fd00::/64"],
+        ["192.168.50.0/24"],
+        ["fd12:3456::/64"],
         ["172.28.0.0/24", "::1/128"],
     ],
 )
@@ -127,6 +138,8 @@ def test_validator_reports_every_problem():
     [
         ({"DJANGO_DEBUG": "true"}, "DJANGO_DEBUG"),
         ({"DJANGO_ALLOWED_HOSTS": ""}, "ALLOWED_HOSTS"),
+        ({"DJANGO_ALLOWED_HOSTS": "*"}, "ALLOWED_HOSTS"),
+        ({"DB_PASSWORD": ""}, "DB_PASSWORD"),
         ({"DJANGO_SECRET_KEY": "EJEMPLO-cambia-esta-clave-larga-y-aleatoria"}, "SECRET_KEY"),
         ({"DB_PASSWORD": "EJEMPLO-cambia-app"}, "DB_PASSWORD"),
         ({"TRUSTED_PROXY_CIDRS": "10.0.0.0/8,172.16.0.0/12"}, "TRUSTED_PROXY_CIDRS"),
@@ -223,14 +236,51 @@ def test_prod_refuses_to_start_when_trusted_proxies_are_left_at_the_default():
     assert "valor por defecto" in result.stderr
 
 
-def test_the_env_example_value_is_rejected_by_prod():
-    ejemplo = load_env_example()["TRUSTED_PROXY_CIDRS"]
-
-    result = import_prod(TRUSTED_PROXY_CIDRS=ejemplo)
-
-    assert result.returncode != 0
-    assert "TRUSTED_PROXY_CIDRS" in result.stderr
-
-
 def test_a_docker_subnet_is_accepted_by_prod():
     assert import_prod(TRUSTED_PROXY_CIDRS="172.28.0.0/24").returncode == 0
+
+
+# --- HSTS corto por defecto y configurable ------------------------------------------------
+
+HSTS_CODIGO = (
+    "import config.settings.prod as s; "
+    "print(s.SECURE_HSTS_SECONDS, s.SECURE_HSTS_INCLUDE_SUBDOMAINS, s.SECURE_HSTS_PRELOAD)"
+)
+
+
+def valores_de_prod(codigo: str, **overrides: str) -> str:
+    env = {**GOOD_ENV, **overrides}
+    resultado = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", codigo],
+        cwd=BACKEND_DIR,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert resultado.returncode == 0, resultado.stderr
+    return resultado.stdout.strip()
+
+
+def test_hsts_is_short_by_default_without_subdomains_or_preload():
+    assert valores_de_prod(HSTS_CODIGO) == "3600 False False"
+
+
+def test_hsts_seconds_and_subdomains_are_configurable():
+    salida = valores_de_prod(HSTS_CODIGO, HSTS_SECONDS="86400", HSTS_INCLUDE_SUBDOMAINS="true")
+
+    assert salida == "86400 True False"
+
+
+def test_hsts_preload_cannot_be_switched_on_from_the_environment():
+    assert valores_de_prod(HSTS_CODIGO, HSTS_PRELOAD="true").endswith("False")
+
+
+# --- vida máxima absoluta de la sesión -----------------------------------------------------
+
+SESION_CODIGO = "import config.settings.prod as s; print(s.SESSION_ABSOLUTE_HOURS)"
+
+
+def test_the_absolute_session_lifetime_defaults_to_12_hours_and_is_configurable():
+    assert valores_de_prod(SESION_CODIGO) == "12"
+    assert valores_de_prod(SESION_CODIGO, SESSION_ABSOLUTE_HOURS="4") == "4"

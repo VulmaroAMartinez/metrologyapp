@@ -1,3 +1,5 @@
+import hashlib
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -60,3 +62,38 @@ def test_counter_is_shared_and_atomic_across_connections():
         allowed = list(pool.map(attempt, range(20)))
 
     assert allowed.count(True) == 5
+
+
+# --- el identificador va protegido con HMAC(SECRET_KEY), no con un hash sin clave ------------
+
+
+def digests_en_cache() -> set[str]:
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT cache_key FROM django_cache")
+        claves = [fila[0] for fila in cursor.fetchall()]
+    return {m.group(1) for k in claves if (m := re.search(r"rl:([0-9a-f]{64}):", k))}
+
+
+def test_the_cache_key_is_not_a_plain_hash_of_the_identifier(clock):
+    check_rate("login", "ana@empresa.test|203.0.113.7", limit=3)
+
+    sin_clave = hashlib.sha256(b"login:ana@empresa.test|203.0.113.7").hexdigest()
+
+    assert len(digests_en_cache()) == 1
+    assert sin_clave not in digests_en_cache()  # un diccionario de correos/IP no lo revierte
+
+
+def test_the_cache_key_depends_on_the_secret_key(clock, settings):
+    check_rate("login", "k", limit=3)
+    settings.SECRET_KEY = "otra-clave-secreta-" + "x" * 40
+
+    check_rate("login", "k", limit=3)
+
+    assert len(digests_en_cache()) == 2
+
+
+def test_the_same_secret_key_gives_the_same_key(clock):
+    check_rate("login", "k", limit=3)
+    check_rate("login", "k", limit=3)
+
+    assert len(digests_en_cache()) == 1

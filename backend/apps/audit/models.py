@@ -75,6 +75,9 @@ class Evento(models.Model):
     objects = EventoQuerySet.as_manager()
 
     class Meta:
+        # El manager base (el que usa Django internamente: save, refresh, relaciones) es el
+        # protegido; sin esto `Evento._base_manager` sería un Manager común sin guardas.
+        base_manager_name = "objects"
         indexes: ClassVar[list] = [
             # Paginación por cursor de la bitácora: ORDER BY ocurrido_en DESC, id DESC. Su primer
             # campo también cubre las búsquedas por rango de fechas.
@@ -92,10 +95,12 @@ class Evento(models.Model):
     def __str__(self):
         return f"{self.tipo} #{self.pk}"
 
-    def save(self, *args, **kwargs):
+    def save(self, **kwargs):
         if not self._state.adding or kwargs.get("force_update"):
             raise EventoInmutableError("Los eventos no se pueden modificar.")
-        super().save(*args, **kwargs)
+        # force_insert: con un pk asignado Django intentaría primero un UPDATE de esa fila.
+        kwargs["force_insert"] = True
+        super().save(**kwargs)
 
     def delete(self, *args, **kwargs):
         raise EventoInmutableError("Los eventos no se pueden borrar.")

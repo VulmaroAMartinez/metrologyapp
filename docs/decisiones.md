@@ -83,6 +83,22 @@ Se completa al terminar el sprint. Los valores provisionales se listan para que 
 | Límite de login por IP + correo | 5 por minuto | `LOGIN_RATE_PER_IP_EMAIL` |
 | Límite de login por IP sola | 20 por minuto | `LOGIN_RATE_PER_IP` |
 | Cierre de sesión por inactividad | 30 min | `SESSION_IDLE_MINUTES` |
+| Vida máxima absoluta de la sesión (decisión de Vul) | 12 h | `SESSION_ABSOLUTE_HOURS` |
+| HSTS en producción (empieza corto; ver `docs/guia-instalacion.md`) | 1 h | `HSTS_SECONDS` |
+
+## Correcciones de la revisión del sprint 1
+Decisiones de Vul: (1) la sesión tiene una vida máxima absoluta de 12 horas, configurable; (2) correo y `numero_nomina` solo con caracteres ASCII; (3) la base de datos en una red `internal: true` y solo `api` con salida.
+- **Vida máxima absoluta de la sesión** (`SESSION_ABSOLUTE_HOURS`, 12 por defecto): la inactividad (30 min) renueva la ventana, pero no más allá de 12 h desde el inicio de sesión. El inicio se sella en la sesión con `user_logged_in` (cubre el login real y `force_login`); `AbsoluteSessionMiddleware` borra la sesión vencida y la trata como anónima. Una sesión sin marca de inicio no se acepta (falla cerrado). Cambiar la contraseña no extiende la ventana; volver a iniciar sesión sí la reinicia. Expirar no genera evento (criterio de `CLAUDE.md`).
+- **Correo y `numero_nomina` solo ASCII**: se validan en `_limpiar_campos` (servicios). `.lower()` de Python y `LOWER()` de PostgreSQL difieren fuera de ASCII (p. ej. la `İ` turca), así que dejarlos pasar rompía la unicidad sin distinguir mayúsculas. El nombre conserva acentos y eñes. No se agregó restricción en la base de datos.
+- **`validate_production`** rechaza además `DJANGO_ALLOWED_HOSTS` con `*`, `DB_PASSWORD` vacío y proxies de confianza que no sean redes privadas (incluido el rango IPv4 mapeado `::ffff:0:0/96`). La lista de proxies por defecto vive solo en `config/settings/guards.py`: el compose y `.env.example` ya no la repiten.
+- **HSTS corto por defecto** (`HSTS_SECONDS=3600`, `HSTS_INCLUDE_SUBDOMAINS=false`, sin preload): un error de HTTPS se corrige en una hora, no en un año. Cuándo subirlo: `docs/guia-instalacion.md`.
+- **Parsers de DRF solo JSON**: formularios y multipart reciben 415 `tipo_no_soportado` (antes se aceptaban sin que nada los usara).
+- **Límite de tasa con HMAC**: el identificador (IP+correo) se protege con HMAC-SHA256 y `SECRET_KEY`; un SHA-256 sin clave se revertía con un diccionario de correos o IP. Rotar `SECRET_KEY` reinicia los contadores (ventanas de un minuto).
+- **`Evento`**: `save()` fuerza `force_insert` (con un pk asignado Django intentaba un UPDATE de esa fila) y `Meta.base_manager_name = "objects"` hace que `_base_manager` sea el manager protegido (migración `audit.0005`). La base de datos sigue siendo la defensa frente a `app`; el dueño (`migrator`) puede saltarse el código con SQL directo, riesgo aceptado y probado con ambos roles.
+- **Redes del compose**: `internal` (`internal: true`) para `db`, `web`, `migrate`, `test` y el tráfico entre servicios; `egress` solo para `api`; `edge` solo para publicar el puerto del proxy. **Límite verificado**: un puerto publicado no funciona desde una red `internal`, así que el proxy necesita `edge`. Se le desactivó el NAT (`enable_ip_masquerade=false`), pero en Docker Desktop (Windows) el proxy **sí alcanza internet** (se midió); en un servidor Linux el NAT desactivado debería impedirlo, sin verificar aquí. Para cerrarlo del todo haría falta una regla de firewall del host (`DOCKER-USER`). `make audit` usa `docker run` (red por defecto) porque necesita internet.
+- **Hook `proteger-archivos.sh`**: el archivo estaba guardado con finales de línea CRLF (bash lo rechazaba con un error de sintaxis) y `jq.exe` de Windows imprime `\r\n`, lo que escondía el nombre; además comparaba rutas con `/` solo. Ahora normaliza `\`, mayúsculas, `.` y `..`, cubre `.env*` (menos `.env.example`, plantilla sin secretos que se edita) y `secrets/`, y falla cerrado sin `jq`, con entrada ilegible o sin ruta. Limitación: solo cubre `Edit|Write`; un `Bash` con `sed -i` no pasa por él.
+- **`make` y Git Bash**: `export MSYS_NO_PATHCONV := 1` en el `Makefile`. Con un `CURDIR` estilo POSIX (`/c/Users/...`), Git Bash convertía `-v /c/ruta:/app` en una lista de rutas de Windows y Docker creaba la carpeta `backend;C` en el repo (reproducido; con la variable no se crea). Se quitaron los `//` de `-w` y `--config`.
+- **`proxytest.sh`**: `.proxytest.env` ya está en `.gitignore` y la clave del administrador viaja por el entorno del comando (`-e NOMBRE` sin valor), no en la línea de comandos.
 
 ## Decisiones de Vul (cierre del commit 5)
 - **No hay desbloqueo manual de cuentas**: ni endpoint, ni comando `desbloquear_usuario`, ni evento `USUARIO_DESBLOQUEADO`. Una cuenta bloqueada solo se libera cuando vence `bloqueado_hasta`. **Consecuencia**: una cuenta que sea objetivo de ataques repetidos puede permanecer bloqueada de forma intermitente (el atacante la vuelve a bloquear al vencer). **Mitigaciones**: evento `CUENTA_BLOQUEADA` en la bitácora (permite detectarlo), límite de tasa por IP e instalación solo en red interna o VPN.
@@ -116,6 +132,10 @@ Lista consolidada del sprint 1; `DEFINICION.md` no se editó.
 - Usuario: agregar `creado_en` (**ya no se agrega `debe_cambiar_contrasena`**: no hay cambio forzado); `no. nomina` es `NULL` si no existe y único (sin distinguir mayúsculas) si existe; correo único sin distinguir mayúsculas y guardado en minúsculas; sin `is_staff`/`is_superuser`.
 - Evento: `usuario` nulo = Sistema (FK protegida); agregar `ip` (nulo) y `instrumento_id` (entero nulo hasta que exista la FK en el sprint 2); `descripcion` va sin fecha (el formato `dd-mm-aaaa hh:mm · ID · texto · usuario` se arma al mostrar); `antes`/`despues` solo aceptan una lista blanca de campos (nunca contraseñas, hashes ni contadores).
 
+**§6.10 Cuentas, contraseñas y sesiones (revisión del sprint 1)**
+- Sesión: además de la expiración deslizante por inactividad, **vida máxima absoluta de 12 horas desde el inicio de sesión** (`SESSION_ABSOLUTE_HOURS`); agregar la variable a la tabla de valores provisionales.
+- Correo y `numero_nomina` solo admiten caracteres ASCII (el nombre no tiene esa restricción); agregarlo a las restricciones de Usuario en §5.
+
 **§6.9 Eventos**
 - Agregar los tipos `CUENTA_BLOQUEADA`, `USUARIO_CONTRASENA_CAMBIADA` (el usuario cambia su propia contraseña), `USUARIO_EDITADO` y `USUARIO_REACTIVADO`.
 - **Quitar los cinco tipos `AVISO_*`** (`AVISO_CREADO`, `AVISO_EDITADO`, `AVISO_CANCELADO`, `AVISO_ENVIADO`, `AVISO_FALLIDO`) de la lista de tipos, y **quitar `AVISO_ENVIADO` del timeline del instrumento** (hoy lista «INSTRUMENTO_*, CALIBRACION_*, CERTIFICADO_*, REEMPLAZO_* y AVISO_ENVIADO»). Se conserva `PROCESO_DIARIO_EJECUTADO`; el historial de avisos vive en la tabla `Aviso`.
@@ -129,7 +149,9 @@ Lista consolidada del sprint 1; `DEFINICION.md` no se editó.
 - Registrar los valores definitivos de la tabla «Valores provisionales para confirmar» (contraseña mínima, bloqueo, límites de tasa, inactividad).
 - Argon2 con los parámetros por defecto de Django (≈100 MiB por verificación); cookies `HttpOnly`, `SameSite=Lax`, `Secure` y prefijo `__Host-` en producción; CSRF en todo POST (también el anónimo); CORS cerrado.
 - El sistema solo se instala en **red interna o VPN**, nunca expuesto directo a internet.
-- `TRUSTED_PROXY_CIDRS` debe acotarse a la subred de Docker (producción se niega a arrancar con un valor amplio).
+- `TRUSTED_PROXY_CIDRS` debe acotarse a la subred de Docker (producción se niega a arrancar con un valor amplio o no privado, con `ALLOWED_HOSTS=*` o con `DB_PASSWORD` vacío).
+- HSTS de 1 hora por defecto, sin `includeSubDomains` ni preload, configurable (`HSTS_SECONDS`); la API solo acepta cuerpos JSON.
+- Red del compose: la base de datos en una red `internal: true` y solo `api` con salida a internet (con el límite del proxy descrito en «Correcciones de la revisión del sprint 1»).
 
 **§9 Despliegue y operación**
 - El primer administrador se crea con `manage.py crear_admin` (contraseña interactiva; variable de entorno solo en instalaciones automatizadas, que el script de instalación debe borrar del `.env` tras usarla) y no tiene cambio forzado. La recuperación de un administrador se hace desde el servidor con `manage.py restablecer_admin <correo>`. Ver `docs/guia-instalacion.md`.

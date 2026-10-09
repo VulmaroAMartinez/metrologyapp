@@ -45,9 +45,11 @@ services:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Falta DJANGO_SECRET_KEY en .env}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
       API_NUM_PROXIES: ${API_NUM_PROXIES:-1}
-      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      # Sin valor por defecto aquí: si no está en .env, manda el de config/settings/guards.py.
+      TRUSTED_PROXY_CIDRS:
       PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-10}
       SESSION_IDLE_MINUTES: ${SESSION_IDLE_MINUTES:-30}
+      SESSION_ABSOLUTE_HOURS: ${SESSION_ABSOLUTE_HOURS:-12}
       LOGIN_MAX_FAILED_ATTEMPTS: ${LOGIN_MAX_FAILED_ATTEMPTS:-5}
       LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
       LOGIN_RATE_PER_IP_EMAIL: ${LOGIN_RATE_PER_IP_EMAIL:-5}
@@ -68,7 +70,7 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
-    networks: [internal]
+    networks: [internal, egress] # la única con salida a internet (p. ej. SMTP en el sprint 4)
 
   # Herramientas puntuales (perfil `tools`): corren con el rol `migrator`, nunca con `app`.
   migrate:
@@ -99,6 +101,9 @@ services:
       - ./db/privileges.sql:/opt/test/privileges.sql:ro # las pruebas de roles lo aplican a su base propia
       - ../docs:/opt/test/docs:ro # la prueba de la lista de seguridad verifica sus referencias
       - ../Makefile:/opt/test/Makefile:ro
+      - ../.gitignore:/opt/test/.gitignore:ro
+      - ../deploy:/opt/test/deploy:ro # pruebas de las redes del compose y de proxytest.sh
+      - ../.claude/hooks:/opt/test/hooks:ro # pruebas del hook de archivos protegidos
     depends_on:
       db: {condition: service_healthy}
     read_only: true
@@ -145,10 +150,17 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    networks: [internal]
+    networks: [internal, edge] # edge: solo para publicar el puerto en 127.0.0.1
 
+# Solo `api` tiene salida a internet. La base de datos y el resto viven en `internal`, que no la
+# tiene; el proxy necesita una red normal para publicar su puerto, pero sin NAT (no sale).
 networks:
-  internal: {}
+  internal:
+    internal: true
+  edge:
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+  egress: {}
 
 volumes:
   db_data: {}

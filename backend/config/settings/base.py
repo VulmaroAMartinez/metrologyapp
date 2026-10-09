@@ -54,6 +54,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.accounts.middleware.AbsoluteSessionMiddleware",  # vida máxima de la sesión (12 h)
     "django.middleware.clickjacking.XFrameOptionsMiddleware",  # aplica X_FRAME_OPTIONS
 ]
 
@@ -63,6 +64,8 @@ MIDDLEWARE = [
 SESSION_IDLE_MINUTES = env.int("SESSION_IDLE_MINUTES", default=30)
 SESSION_COOKIE_AGE = SESSION_IDLE_MINUTES * 60
 SESSION_SAVE_EVERY_REQUEST = True
+# Límite absoluto desde el inicio de sesión: la actividad renueva la inactividad, no este tope.
+SESSION_ABSOLUTE_HOURS = env.int("SESSION_ABSOLUTE_HOURS", default=12)
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 # El token CSRF se entrega por /auth/csrf/; la cookie no necesita ser legible desde JS.
@@ -123,6 +126,8 @@ REST_FRAMEWORK = {
     # explícitamente `AllowAny` (pública), `IsAuthenticated` (cualquier rol, sin comprobar el
     # cambio de contraseña pendiente) o `requiere(Accion.X)` (apps/accounts/permissions.py).
     "DEFAULT_AUTHENTICATION_CLASSES": ["apps.accounts.authentication.StrictSessionAuthentication"],
+    # Solo cuerpos JSON: sin formularios ni multipart (superficie innecesaria; 415 el resto).
+    "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     "DEFAULT_PERMISSION_CLASSES": ["apps.accounts.permissions.DenegarPorDefecto"],
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],

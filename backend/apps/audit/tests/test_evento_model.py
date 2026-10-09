@@ -109,6 +109,29 @@ def test_saving_an_existing_event_is_rejected():
     assert Evento.objects.get(pk=evento.pk).descripcion == "prueba"
 
 
+def test_saving_with_an_existing_pk_inserts_and_never_updates():
+    """Con pk asignado y `_state.adding`, Django intentaría primero un UPDATE de esa fila."""
+    evento = crear()
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        Evento(pk=evento.pk, tipo=TipoEvento.SESION_FALLIDA, descripcion="alterada").save()
+
+    assert Evento.objects.get(pk=evento.pk).descripcion == "prueba"
+
+
+def test_the_base_manager_is_the_protected_one():
+    evento = crear()
+
+    assert Evento._meta.base_manager_name == "objects"
+    with pytest.raises(EventoInmutableError):
+        Evento._base_manager.filter(pk=evento.pk).update(descripcion="alterada")
+    with pytest.raises(EventoInmutableError):
+        Evento._base_manager.all().delete()
+    with pytest.raises(EventoInmutableError):
+        Evento._base_manager.bulk_update([evento], ["descripcion"])
+    assert Evento.objects.get(pk=evento.pk).descripcion == "prueba"
+
+
 def test_force_update_on_a_new_instance_is_rejected():
     with pytest.raises(EventoInmutableError):
         Evento(tipo=TipoEvento.SESION_INICIADA, descripcion="x").save(force_update=True)

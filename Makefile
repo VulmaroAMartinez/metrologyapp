@@ -1,3 +1,8 @@
+# Git Bash (MSYS) convierte las rutas de los argumentos: con un CURDIR estilo POSIX (/c/Users/...),
+# `-v /c/ruta:/app` se vuelve una lista de rutas de Windows y Docker crea una carpeta basura
+# (`backend;C`) en el repositorio. Desactivar la conversión evita eso y los parches con `//`.
+export MSYS_NO_PATHCONV := 1
+
 # El compose vive en deploy/: Compose no lee el .env de la raíz, por eso --env-file explícito.
 COMPOSE := docker compose -f deploy/docker-compose.yml --env-file .env
 MIGRATE := $(COMPOSE) --profile tools run --rm --build migrate
@@ -26,14 +31,14 @@ PYIMG := python:3.14.8-slim-bookworm@sha256:48b13b003dda20b16f9442b8475aa05fe21b
 
 fmt: ## Formatea el backend con ruff (escribe en backend/)
 	docker compose -f deploy/docker-compose.yml --env-file .env.example --profile tools build test
-	docker run --rm --user root -v "$(CURDIR)/backend:/app" -w //app metrologia-test sh -c "ruff check --no-cache --fix . ; ruff format --no-cache ."
+	docker run --rm --user root -v "$(CURDIR)/backend:/app" -w /app metrologia-test sh -c "ruff check --no-cache --fix . ; ruff format --no-cache ."
 
 lock: ## Regenera backend/requirements*.txt con hashes (solo wheels)
-	docker run --rm -v "$(CURDIR)/backend:/work" -w //work $(PYIMG) sh -c "pip install -q pip-tools==7.6.2 && 	pip-compile -q --generate-hashes --allow-unsafe --strip-extras --pip-args=--only-binary=:all: -o requirements.txt requirements.in && 	pip-compile -q --generate-hashes --allow-unsafe --strip-extras --pip-args=--only-binary=:all: -o requirements-dev.txt requirements-dev.in"
+	docker run --rm -v "$(CURDIR)/backend:/work" -w /work $(PYIMG) sh -c "pip install -q pip-tools==7.6.2 && pip-compile -q --generate-hashes --allow-unsafe --strip-extras --pip-args=--only-binary=:all: -o requirements.txt requirements.in && pip-compile -q --generate-hashes --allow-unsafe --strip-extras --pip-args=--only-binary=:all: -o requirements-dev.txt requirements-dev.in"
 
 secrets: ## Escaneo de secretos: historial git y archivos del directorio de trabajo
-	docker run --rm -v "$(CURDIR):/repo" -w //repo zricethezav/gitleaks:v8.30.1 detect --source . --config .gitleaks.toml --no-banner
-	docker run --rm -v "$(CURDIR):/repo" -w //repo zricethezav/gitleaks:v8.30.1 dir . --config .gitleaks.toml --no-banner
+	docker run --rm -v "$(CURDIR):/repo" -w /repo zricethezav/gitleaks:v8.30.1 detect --source . --config .gitleaks.toml --no-banner
+	docker run --rm -v "$(CURDIR):/repo" -w /repo zricethezav/gitleaks:v8.30.1 dir . --config .gitleaks.toml --no-banner
 
 # test, lint y ci se completan con cada tarea del sprint (backend, frontend, auditorías).
 test: ## Pruebas (backend con pytest; frontend se suma después)
@@ -41,7 +46,9 @@ test: ## Pruebas (backend con pytest; frontend se suma después)
 		pytest --cov=apps --cov=config --cov-report=term-missing --cov-fail-under=95
 
 audit: ## Auditoría de dependencias (pip-audit) contra los archivos con hashes; falla si hay vulnerabilidades
-	docker compose -f deploy/docker-compose.yml --env-file .env.example --profile tools run --rm --build --no-deps -e HOME=//tmp -e XDG_CACHE_HOME=//tmp test sh -c "pip-audit -r requirements.txt --require-hashes --disable-pip && pip-audit -r requirements-dev.txt --require-hashes --disable-pip"
+	# Necesita red: va con `docker run` (red por defecto), no con el compose, cuyas redes no tienen salida.
+	docker compose -f deploy/docker-compose.yml --env-file .env.example --profile tools build test
+	docker run --rm --read-only --tmpfs /tmp -e HOME=/tmp -e XDG_CACHE_HOME=/tmp metrologia-test sh -c "pip-audit -r requirements.txt --require-hashes --disable-pip && pip-audit -r requirements-dev.txt --require-hashes --disable-pip"
 
 check-containers: ## Verifica la seguridad de los contenedores del entorno de desarrollo en ejecución
 	sh deploy/verificar_contenedores.sh metrologia
@@ -52,6 +59,6 @@ test-proxy: ## Pruebas contra el stack real (Caddy + Django) con cabeceras falsi
 lint: ## Valida compose y Caddyfile, y ruff del backend
 	docker compose -f deploy/docker-compose.yml --env-file .env.example --profile tools run --rm --build --no-deps test sh -c "ruff check --no-cache . && ruff format --check --no-cache ."
 	docker compose -f deploy/docker-compose.yml --env-file .env.example config -q
-	docker run --rm --env-file .env.example -v "$(CURDIR)/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.11.7-alpine caddy validate --config //etc/caddy/Caddyfile
+	docker run --rm --env-file .env.example -v "$(CURDIR)/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.11.7-alpine caddy validate --config /etc/caddy/Caddyfile
 
 ci: lint audit test test-proxy secrets ## Todo lo anterior; falla ante cualquier problema

@@ -17,6 +17,7 @@ DEFAULT_TRUSTED_PROXY_CIDRS = [
 # cualquier máquina de la red. Una red de Docker típica es /16 o más estrecha.
 MIN_PREFIX_IPV4 = 16
 MIN_PREFIX_IPV6 = 64
+IPV4_MAPEADO = ipaddress.ip_network("::ffff:0:0/96")
 
 
 def _problemas_proxies(cidrs):
@@ -41,6 +42,17 @@ def _problemas_proxies(cidrs):
                 f"TRUSTED_PROXY_CIDRS: {cidr} es demasiado amplio (máximo /{minimo}); "
                 "acótalo a la subred de Docker (docs/guia-instalacion.md)"
             )
+        elif red.version == 6 and red.overlaps(IPV4_MAPEADO):
+            # ::ffff:a.b.c.d es una IPv4 escrita como IPv6: abarcaría direcciones IPv4 enteras.
+            problemas.append(
+                f"TRUSTED_PROXY_CIDRS: {cidr} es un rango IPv4 mapeado en IPv6; "
+                "usa el CIDR IPv4 de la subred de Docker"
+            )
+        elif red.is_global:
+            problemas.append(
+                f"TRUSTED_PROXY_CIDRS: {cidr} no es una red privada; el proxy debe estar en la "
+                "red interna de Docker (docs/guia-instalacion.md)"
+            )
     return problemas
 
 
@@ -51,11 +63,15 @@ def validate_production(*, secret_key, db_password, allowed_hosts, debug, truste
         problems.append("DJANGO_DEBUG está activo")
     if not allowed_hosts:
         problems.append("DJANGO_ALLOWED_HOSTS está vacío")
+    elif "*" in allowed_hosts:
+        problems.append("DJANGO_ALLOWED_HOSTS contiene '*' (acepta cualquier cabecera Host)")
     if secret_key.startswith(EXAMPLE_MARKER):
         problems.append("DJANGO_SECRET_KEY es el valor de ejemplo de .env.example")
     elif len(secret_key) < MIN_SECRET_KEY_LENGTH:
         problems.append(f"DJANGO_SECRET_KEY tiene menos de {MIN_SECRET_KEY_LENGTH} caracteres")
-    if db_password.startswith(EXAMPLE_MARKER):
+    if not db_password.strip():
+        problems.append("DB_PASSWORD está vacío")
+    elif db_password.startswith(EXAMPLE_MARKER):
         problems.append("DB_PASSWORD es el valor de ejemplo de .env.example")
     problems += _problemas_proxies(trusted_proxy_cidrs)
     if problems:

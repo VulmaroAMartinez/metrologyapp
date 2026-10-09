@@ -1,7 +1,8 @@
 #!/bin/sh
 # Verifica la configuración de seguridad de los contenedores EN EJECUCIÓN de un proyecto Compose:
 # sin root, sin capacidades, no-new-privileges, sistema de archivos de solo lectura, BD sin puerto
-# publicado, único puerto del host en 127.0.0.1 y volumen persistente para la base de datos.
+# publicado, único puerto del host en 127.0.0.1, redes (la base de datos y el frontend sin salida a
+# internet; solo api con salida) y volumen persistente para la base de datos.
 # Uso: sh deploy/verificar_contenedores.sh <proyecto>      (p. ej. metrologia)
 set -eu
 PROYECTO=${1:?Falta el nombre del proyecto Compose}
@@ -16,6 +17,11 @@ verificar() { # descripción, condición (0 = cumple)
 contiene() { # texto, patrón -> 0 si el texto lo contiene
   case "$1" in *"$2"*) echo 0 ;; *) echo 1 ;; esac
 }
+
+# Redes de un contenedor separadas por espacios (nombres reales de Docker).
+redes_de() { docker inspect --format '{{range $red, $_ := .NetworkSettings.Networks}}{{$red}} {{end}}' "$PROYECTO-$1-1"; }
+es_interna() { [ "$(docker network inspect --format '{{.Internal}}' "$1")" = "true" ]; }
+sin_nat() { [ "$(docker network inspect --format '{{index .Options "com.docker.network.bridge.enable_ip_masquerade"}}' "$1")" = "false" ]; }
 
 for servicio in db api web proxy; do
   echo "[$servicio]"
@@ -51,6 +57,22 @@ verificar "proxy: solo 8080/tcp, enlazado a 127.0.0.1" \
   "$(contiene "$enlaces" '"HostIp":"127.0.0.1"')"
 verificar "proxy: ningún enlace a 0.0.0.0" \
   "$([ "$(contiene "$enlaces" '"HostIp":"0.0.0.0"')" = "1" ] && [ "$(contiene "$enlaces" '"HostIp":""')" = "1" ] && echo 0 || echo 1)"
+
+echo "[redes: solo api sale a internet]"
+for servicio in db web; do
+  externas=""
+  for red in $(redes_de "$servicio"); do es_interna "$red" || externas="$externas $red"; done
+  verificar "$servicio: todas sus redes son internal (sin salida)${externas:+ (no lo son:$externas)}"     "$([ -z "$externas" ] && echo 0 || echo 1)"
+  verificar "$servicio: no alcanza internet"     "$(docker exec "$PROYECTO-$servicio-1" sh -c 'wget -T 3 -q -O /dev/null http://1.1.1.1' >/dev/null 2>&1 && echo 1 || echo 0)"
+done
+con_salida=0
+for red in $(redes_de api); do es_interna "$red" || con_salida=1; done
+verificar "api: tiene una red con salida (la única que la necesita)" "$([ "$con_salida" = 1 ] && echo 0 || echo 1)"
+fallo_proxy=0
+for red in $(redes_de proxy); do
+  es_interna "$red" || sin_nat "$red" || fallo_proxy=1
+done
+verificar "proxy: su red no interna (para publicar el puerto) tiene el NAT desactivado" "$fallo_proxy"
 
 echo "[datos y recursos]"
 verificar "db: volumen persistente en /var/lib/postgresql" \

@@ -30,10 +30,13 @@ $COMPOSE --profile tools run --rm --build migrate
 # Primer administrador, como en una instalación real (crear_admin; entra directo, sin cambio forzado).
 ADMIN_CORREO=admin-proxytest@empresa.test
 ADMIN_CLAVE=$(rand 24)
-$COMPOSE --profile tools run --rm --no-deps -e CREAR_ADMIN_CONTRASENA="$ADMIN_CLAVE" migrate \
+# La clave viaja por el entorno del comando (`-e NOMBRE` sin valor): no queda en la lista de procesos.
+CREAR_ADMIN_CONTRASENA="$ADMIN_CLAVE" $COMPOSE --profile tools run --rm --no-deps \
+  -e CREAR_ADMIN_CONTRASENA migrate \
   python manage.py crear_admin --correo "$ADMIN_CORREO" --nombre "Admin Proxytest"
 $COMPOSE up -d --build --wait
 sh deploy/verificar_contenedores.sh metrologia-proxytest
-$COMPOSE --profile tools run --rm --build --no-deps -e PROXY_BASE_URL=http://proxy:8080 \
-  -e PROXYTEST_ADMIN_CORREO="$ADMIN_CORREO" -e PROXYTEST_ADMIN_CONTRASENA="$ADMIN_CLAVE" test \
+PROXYTEST_ADMIN_CONTRASENA="$ADMIN_CLAVE" $COMPOSE --profile tools run --rm --build --no-deps \
+  -e PROXY_BASE_URL=http://proxy:8080 -e PROXYTEST_ADMIN_CORREO="$ADMIN_CORREO" \
+  -e PROXYTEST_ADMIN_CONTRASENA test \
   pytest --ds=config.settings.test -p no:cacheprovider -o addopts="" -v proxytests

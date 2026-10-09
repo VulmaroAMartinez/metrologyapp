@@ -7,6 +7,10 @@ useDefault = true
 description = "Plantilla sin secretos reales"
 paths = ['''\.env\.example$''']
 
+[[allowlists]]
+description = "Caché generada por graphify (ignorada por git): hashes que parecen claves"
+paths = ['''^graphify-out/''']
+
 # Solo constantes con estos nombres, dentro de tests: no es una exención general de tests/.
 [[allowlists]]
 description = "Contraseñas de prueba (constantes de tests)"

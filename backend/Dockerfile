@@ -8,6 +8,8 @@ COPY requirements.txt .
 RUN pip install --require-hashes --only-binary=:all: -r requirements.txt
 
 FROM base AS test
+# jq y bash: las pruebas del hook .claude/hooks/proteger-archivos.sh (solo en la etapa de pruebas).
+RUN apt-get update     && apt-get install -y --no-install-recommends jq     && rm -rf /var/lib/apt/lists/*
 COPY requirements-dev.txt .
 RUN pip install --require-hashes --only-binary=:all: -r requirements-dev.txt
 COPY --chown=10001:10001 . .
