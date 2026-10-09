@@ -1,6 +1,6 @@
 """Forma estándar de los errores de la API: {"codigo": ..., "detalle": ...}.
 
-Los errores que ya traen su propio `codigo` (debe_cambiar_contrasena, csrf_invalido...) se
+Los errores que ya traen su propio `codigo` (csrf_invalido...) se
 respetan; el resto se normaliza por código HTTP.
 """
 

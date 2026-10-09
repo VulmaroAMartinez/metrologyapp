@@ -32,7 +32,6 @@ def test_defaults():
     assert usuario.is_active is True
     assert usuario.intentos_fallidos == 0
     assert usuario.bloqueado_hasta is None
-    assert usuario.debe_cambiar_contrasena is False
     assert usuario.numero_nomina is None
     assert timezone.is_aware(usuario.creado_en)
 

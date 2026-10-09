@@ -207,29 +207,28 @@ def test_rate_limited_requests_write_no_event_only_a_log_line(
 
 
 @pytest.fixture
-def forzado(db):
-    return UsuarioFactory(correo="nuevo@empresa.test", debe_cambiar_contrasena=True)
+def administrador(db):
+    return UsuarioFactory(correo="nuevo@empresa.test", rol=Usuario.Rol.ADMIN)
 
 
 def cambiar(api, actual=DEFAULT_PASSWORD, nueva="tornillo-azul-77-nube"):
     return api.post(CAMBIAR, {"contrasena_actual": actual, "contrasena_nueva": nueva})
 
 
-def test_password_change_writes_an_event_with_before_and_after(api, forzado):
-    api.login(forzado.correo)
+def test_password_change_writes_an_event_without_password_data(api, administrador):
+    api.login(administrador.correo)
     Evento.objects.all()  # el SESION_INICIADA ya existe
 
     assert cambiar(api).status_code == 200
 
     evento = Evento.objects.get(tipo="USUARIO_CONTRASENA_CAMBIADA")
-    assert evento.usuario == forzado
-    assert evento.antes == {"debe_cambiar_contrasena": True}
-    assert evento.despues == {"debe_cambiar_contrasena": False}
+    assert evento.usuario == administrador
+    assert (evento.antes, evento.despues) == (None, None)  # nunca datos de la contraseña
     assert evento.ip == "127.0.0.1"
 
 
-def test_rejected_password_changes_write_no_event(api, forzado):
-    api.login(forzado.correo)
+def test_rejected_password_changes_write_no_event(api, administrador):
+    api.login(administrador.correo)
 
     cambiar(api, actual="no-es-la-actual-1")
     cambiar(api, nueva=DEFAULT_PASSWORD)
@@ -238,16 +237,15 @@ def test_rejected_password_changes_write_no_event(api, forzado):
     assert "USUARIO_CONTRASENA_CAMBIADA" not in tipos()
 
 
-def test_if_the_password_event_fails_the_change_is_rolled_back(forzado):
+def test_if_the_password_event_fails_the_change_is_rolled_back(administrador):
     api = Api(raise_request_exception=False)
-    api.login(forzado.correo)
+    api.login(administrador.correo)
     with mock.patch.object(services, "registrar_evento", side_effect=RuntimeError("falla")):
         respuesta = cambiar(api)
 
-    forzado.refresh_from_db()
+    administrador.refresh_from_db()
     assert respuesta.status_code == 500
-    assert forzado.debe_cambiar_contrasena is True
-    assert forzado.check_password(DEFAULT_PASSWORD)
+    assert administrador.check_password(DEFAULT_PASSWORD)  # la contraseña no cambió
 
 
 def test_logout_writes_no_event(api, usuario):
@@ -262,12 +260,12 @@ def test_logout_writes_no_event(api, usuario):
 # --- nada sensible en ninguna columna ------------------------------------------------------
 
 
-def test_no_password_hash_or_secret_appears_in_any_event_column(api, forzado):
+def test_no_password_hash_or_secret_appears_in_any_event_column(api, administrador):
     api.login("nadie@empresa.test", "contrasena-ajena-9")
-    api.login(forzado.correo, "contrasena-mala-8")
-    api.login(forzado.correo)
+    api.login(administrador.correo, "contrasena-mala-8")
+    api.login(administrador.correo)
     cambiar(api, nueva="clave-nueva-larga-55")
-    forzado.refresh_from_db()
+    administrador.refresh_from_db()
 
     texto = volcado()
     for secreto in (
@@ -275,11 +273,11 @@ def test_no_password_hash_or_secret_appears_in_any_event_column(api, forzado):
         "contrasena-mala-8",
         DEFAULT_PASSWORD,
         "clave-nueva-larga-55",
-        forzado.password,
+        administrador.password,
         "argon2",
         "pbkdf2",
         "md5$",
         api.session_cookie,
     ):
         assert secreto not in texto, secreto
-    assert Usuario.objects.get(pk=forzado.pk).intentos_fallidos == 0
+    assert Usuario.objects.get(pk=administrador.pk).intentos_fallidos == 0

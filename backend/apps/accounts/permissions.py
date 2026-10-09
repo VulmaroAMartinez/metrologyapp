@@ -5,8 +5,7 @@ Una única tabla rol -> acciones (`ACCIONES_POR_ROL`) y una sola clase DRF reuti
 ninguno, `DenegarPorDefecto` la deniega.
 
 Política de respuesta, igual para todos los recursos: sin sesión -> 401 `no_autenticado`;
-con sesión pero sin la acción -> 403 `permiso_denegado` (nunca 404 para ocultar recursos);
-cambio de contraseña pendiente -> 403 `debe_cambiar_contrasena`.
+con sesión pero sin la acción -> 403 `permiso_denegado` (nunca 404 para ocultar recursos).
 """
 
 import logging
@@ -20,7 +19,6 @@ from .models import Usuario
 
 logger = logging.getLogger(__name__)
 
-CODIGO_CAMBIO_OBLIGATORIO = "debe_cambiar_contrasena"
 CODIGO_PERMISO_DENEGADO = "permiso_denegado"
 
 
@@ -35,6 +33,9 @@ class Accion(StrEnum):
     VER_BITACORA = "VER_BITACORA"  # bitácora de auditoría completa
     GESTIONAR_USUARIOS = "GESTIONAR_USUARIOS"
     GESTIONAR_CATALOGOS = "GESTIONAR_CATALOGOS"  # catálogos y configuración [PROPUESTA]
+    # Solo el administrador asigna contraseñas (decisión de Vul): técnicos y espectadores no
+    # pueden cambiar la suya por ninguna vía de la API.
+    CAMBIAR_PROPIA_CONTRASENA = "CAMBIAR_PROPIA_CONTRASENA"
     RECIBIR_CORREOS_CADUCIDAD = "RECIBIR_CORREOS_CADUCIDAD"  # lo usa el proceso diario (sprint 4)
 
 
@@ -54,6 +55,7 @@ ACCIONES_POR_ROL = MappingProxyType(
                 Accion.VER_BITACORA,
                 Accion.GESTIONAR_USUARIOS,
                 Accion.GESTIONAR_CATALOGOS,
+                Accion.CAMBIAR_PROPIA_CONTRASENA,
                 Accion.RECIBIR_CORREOS_CADUCIDAD,
             }
         ),
@@ -75,23 +77,6 @@ def puede(rol, accion) -> bool:
     return accion in ACCIONES_POR_ROL.get(rol, frozenset())
 
 
-class PasswordChangeNotRequired(BasePermission):
-    """Mientras `debe_cambiar_contrasena` sea verdadero, todo responde 403 con un código claro.
-
-    Las vistas que deben seguir accesibles (me, logout, cambiar-contrasena) no la incluyen.
-    """
-
-    def has_permission(self, request, view):
-        if getattr(request.user, "debe_cambiar_contrasena", False):
-            raise PermissionDenied(
-                {
-                    "codigo": CODIGO_CAMBIO_OBLIGATORIO,
-                    "detalle": "Debes cambiar tu contraseña antes de continuar.",
-                }
-            )
-        return True
-
-
 def _autenticado(request) -> bool:
     return bool(request.user and request.user.is_authenticated)
 
@@ -109,14 +94,13 @@ class DenegarPorDefecto(BasePermission):
 
 
 class RequiereAccion(BasePermission):
-    """Sesión válida + sin cambio de contraseña pendiente + rol con la acción requerida."""
+    """Sesión válida + rol con la acción requerida."""
 
     accion_requerida: Accion
 
     def has_permission(self, request, view):
         if not _autenticado(request):
             raise NotAuthenticated()
-        PasswordChangeNotRequired().has_permission(request, view)
         if puede(request.user.rol, self.accion_requerida):
             return True
         # Sin evento (§6.9 no lo define): solo una línea de log, sin datos sensibles.

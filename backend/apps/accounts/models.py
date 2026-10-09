@@ -21,7 +21,6 @@ class Usuario(AbstractBaseUser):
     activo = models.BooleanField(default=True)
     intentos_fallidos = models.IntegerField(default=0)
     bloqueado_hasta = models.DateTimeField(null=True, blank=True)
-    debe_cambiar_contrasena = models.BooleanField(default=False)
     creado_en = models.DateTimeField(auto_now_add=True)
 
     objects = UsuarioManager()

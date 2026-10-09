@@ -16,7 +16,6 @@ CAMPOS_PERMITIDOS = frozenset(
         "numero_nomina",
         "rol",
         "activo",
-        "debe_cambiar_contrasena",
         "bloqueado_hasta",
         "motivo",
     }

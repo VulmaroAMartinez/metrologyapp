@@ -113,7 +113,7 @@ def test_demoting_and_resetting_concurrently_keeps_events_and_state_consistent(e
 
     resultados = en_paralelo(
         lambda: services.cambiar_rol(ana.pk, beto.pk, TECNICO),
-        lambda: services.restablecer_contrasena(beto.pk, ana.pk),
+        lambda: services.restablecer_contrasena(beto.pk, ana.pk, "nube-de-algodon-88-azul"),
     )
 
     assert administradores_activos() >= 1
@@ -127,7 +127,11 @@ def test_simultaneous_submissions_of_the_same_form_create_one_user_and_one_clean
 
     def crear(actor):
         return lambda: services.crear_usuario(
-            actor.pk, nombre="Luis", correo="luis@empresa.test", rol=TECNICO
+            actor.pk,
+            nombre="Luis",
+            correo="luis@empresa.test",
+            rol=TECNICO,
+            contrasena="tornillo-azul-77-nube",
         )
 
     resultados = en_paralelo(crear(ana), crear(beto))
@@ -148,6 +152,7 @@ def test_the_unique_index_resolves_the_race_when_the_precheck_is_bypassed():
             correo="luis@empresa.test",
             rol=TECNICO,
             numero_nomina="N-1",
+            contrasena="tornillo-azul-77-nube",
         )
 
     with mock.patch.object(services, "_verificar_duplicados"):  # simula pasar la comprobación
@@ -167,7 +172,12 @@ def test_two_http_submissions_of_the_same_form_give_201_and_400_never_500(settin
         api = Api()
         assert api.login(admin.correo).status_code == 200
         sesiones.append(api)
-    cuerpo = {"nombre": "Luis", "correo": "luis@empresa.test", "rol": "TECNICO"}
+    cuerpo = {
+        "nombre": "Luis",
+        "correo": "luis@empresa.test",
+        "rol": "TECNICO",
+        "contrasena": "tornillo-azul-77-nube",
+    }
 
     resultados = en_paralelo(*[(lambda a=api: a.post(BASE, cuerpo)) for api in sesiones])
 

@@ -14,10 +14,7 @@ from enum import StrEnum
 from django.conf import settings
 from django.contrib.auth import SESSION_KEY, login, logout, update_session_auth_hash
 from django.contrib.auth.hashers import check_password, make_password
-from django.contrib.auth.password_validation import (
-    get_default_password_validators,
-    validate_password,
-)
+from django.contrib.auth.password_validation import validate_password
 from django.contrib.sessions.models import Session
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email
@@ -202,6 +199,7 @@ def cerrar_sesion(request) -> None:
 
 
 def cambiar_contrasena(request, usuario_pk: int, actual: str, nueva: str) -> Usuario:
+    """Cambio de la contraseña propia (solo ADMIN: acción CAMBIAR_PROPIA_CONTRASENA)."""
     usuario = Usuario.objects.get(pk=usuario_pk)
     if not usuario.check_password(actual):
         raise ContrasenaActualIncorrecta
@@ -211,16 +209,13 @@ def cambiar_contrasena(request, usuario_pk: int, actual: str, nueva: str) -> Usu
 
     ip = client_ip(request)
     with transaction.atomic():
-        antes = {"debe_cambiar_contrasena": usuario.debe_cambiar_contrasena}
         usuario.set_password(nueva)
-        usuario.debe_cambiar_contrasena = False
-        usuario.save(update_fields=["password", "debe_cambiar_contrasena"])
+        usuario.save(update_fields=["password"])
+        # Sin antes/después: la contraseña nunca va a la bitácora, ni siquiera su hash.
         registrar_evento(
             TipoEvento.USUARIO_CONTRASENA_CAMBIADA,
             usuario,
-            "El usuario cambió su contraseña",
-            antes=antes,
-            despues={"debe_cambiar_contrasena": False},
+            "El administrador cambió su propia contraseña",
             ip=ip,
         )
         # Conserva la sesión actual; las demás dejan de ser válidas porque su hash de sesión
@@ -242,8 +237,6 @@ def cambiar_contrasena(request, usuario_pk: int, actual: str, nueva: str) -> Usu
 NOMBRE_MAX = 150
 NOMINA_MAX = 20
 CORREO_MAX = 254
-ALFABETO_TEMPORAL = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
-LONGITUD_TEMPORAL = 20  # mínimo 16; se sube si PASSWORD_MIN_LENGTH lo exige
 
 
 class ErrorDeUsuario(Exception):
@@ -385,29 +378,13 @@ def _no_a_si_mismo(actor, objetivo) -> None:
         raise AutoModificacionNoPermitida
 
 
-def _longitud_minima() -> int:
-    minimas = [getattr(v, "min_length", 0) for v in get_default_password_validators()]
-    return max([LONGITUD_TEMPORAL, *minimas])
-
-
-def generar_contrasena_temporal(usuario=None) -> str:
-    """Contraseña aleatoria del módulo `secrets` (nunca la escribe una persona): al menos 16
-    caracteres (20 por defecto) con mayúsculas, minúsculas y dígitos, y que pasa los
-    validadores. Se muestra una sola vez; nunca va a eventos, logs ni mensajes de error."""
-    longitud = _longitud_minima()
-    while True:
-        candidata = "".join(secrets.choice(ALFABETO_TEMPORAL) for _ in range(longitud))
-        if not (
-            any(c.islower() for c in candidata)
-            and any(c.isupper() for c in candidata)
-            and any(c.isdigit() for c in candidata)
-        ):
-            continue
-        try:
-            validate_password(candidata, usuario)
-        except DjangoValidationError:
-            continue
-        return candidata
+def _validar_contrasena(contrasena: str, usuario) -> None:
+    """Pasa la contraseña por los validadores. Los mensajes describen la regla incumplida y
+    nunca incluyen la contraseña; ella no se devuelve, ni se registra, ni va a un evento."""
+    try:
+        validate_password(contrasena, usuario)
+    except DjangoValidationError as error:
+        raise DatosDeUsuarioInvalidos(" ".join(error.messages)) from None
 
 
 def invalidar_sesiones(usuario_pk: int) -> int:
@@ -439,46 +416,37 @@ def _etiqueta(usuario) -> str:
     return f"{usuario.correo} (id {usuario.pk})"
 
 
-def crear_usuario(actor_pk, *, nombre, correo, rol, numero_nomina=None, contrasena=None, ip=None):
-    """Crea un usuario con cambio de contraseña obligatorio.
-
-    Con `contrasena=None` el sistema genera una temporal (la API siempre así) y la devuelve:
-    `(usuario, temporal)`. `actor_pk=None` es el Sistema (comando crear_admin, que sí recibe
-    la contraseña por prompt). La temporal es la única vez que existe en claro."""
+def crear_usuario(actor_pk, *, nombre, correo, rol, contrasena, numero_nomina=None, ip=None):
+    """Crea un usuario. Solo el administrador asigna contraseñas: la escribe él (o quien crea
+    el primer administrador con `crear_admin`) y pasa por los validadores. `actor_pk=None` es
+    el Sistema. La contraseña no se devuelve ni se registra en ningún evento."""
     if rol not in Usuario.Rol.values:
         raise DatosDeUsuarioInvalidos("El rol no es válido.")
     campos = _limpiar_campos({"nombre": nombre, "correo": correo, "numero_nomina": numero_nomina})
-    temporal = None
     try:
         with transaction.atomic():
             actor, _, _ = _bloquear_administradores(actor_pk)
             _verificar_duplicados(campos["correo"], campos["numero_nomina"])
-            candidato = Usuario(nombre=campos["nombre"], correo=campos["correo"])
-            if contrasena is None:
-                temporal = contrasena = generar_contrasena_temporal(candidato)
-            else:
-                try:
-                    validate_password(contrasena, candidato)
-                except DjangoValidationError as error:
-                    raise DatosDeUsuarioInvalidos(" ".join(error.messages)) from None
+            _validar_contrasena(
+                contrasena, Usuario(nombre=campos["nombre"], correo=campos["correo"])
+            )
             usuario = Usuario.objects.create_user(
                 campos["correo"],
                 campos["nombre"],
                 rol,
                 password=contrasena,
                 numero_nomina=campos["numero_nomina"],
-                debe_cambiar_contrasena=True,
             )
             registrar_evento(
                 TipoEvento.USUARIO_CREADO,
                 actor,
                 f"Usuario creado: {_etiqueta(usuario)}, rol {usuario.rol}",
-                despues={**_datos(usuario), "debe_cambiar_contrasena": True},
+                despues=_datos(usuario),
                 ip=ip,
             )
     except IntegrityError as error:
         _relanzar_unicidad(error)
-    return usuario, temporal
+    return usuario
 
 
 def editar_usuario(actor_pk, objetivo_pk, campos: dict, ip=None) -> Usuario:
@@ -577,25 +545,29 @@ def reactivar_usuario(actor_pk, objetivo_pk, ip=None) -> Usuario:
     return objetivo
 
 
-def restablecer_contrasena(actor_pk, objetivo_pk, ip=None):
-    """Genera una contraseña temporal y exige cambiarla. Devuelve (usuario, temporal).
+def restablecer_contrasena(actor_pk, objetivo_pk, contrasena, ip=None, solo_rol=None):
+    """El administrador fija una contraseña nueva a OTRO usuario (incluido el otro
+    administrador), sin reautenticación. `actor_pk=None` es el Sistema (comando
+    `restablecer_admin`, con `solo_rol=ADMIN`).
 
     Un administrador no puede restablecerse a sí mismo por aquí: su vía es cambiar-contrasena,
     que pide la contraseña actual. NO modifica intentos_fallidos ni bloqueado_hasta: sería un
-    desbloqueo manual, descartado por decisión del equipo."""
+    desbloqueo manual, descartado por decisión del equipo. Cierra las sesiones del afectado."""
     with transaction.atomic():
         actor, objetivo, _ = _bloquear_administradores(actor_pk, objetivo_pk)
-        _no_a_si_mismo(actor, objetivo)
-        temporal = generar_contrasena_temporal(objetivo)
-        objetivo.set_password(temporal)
-        objetivo.debe_cambiar_contrasena = True
-        objetivo.save(update_fields=["password", "debe_cambiar_contrasena"])
+        if actor is not None:
+            _no_a_si_mismo(actor, objetivo)
+        if solo_rol is not None and objetivo.rol != solo_rol:
+            raise DatosDeUsuarioInvalidos("El usuario no es administrador.")
+        _validar_contrasena(contrasena, objetivo)
+        objetivo.set_password(contrasena)
+        objetivo.save(update_fields=["password"])
         invalidar_sesiones(objetivo.pk)
+        origen = " por comando de servidor" if actor is None else ""
         registrar_evento(
             TipoEvento.USUARIO_CONTRASENA_RESTABLECIDA,
             actor,
-            f"Contraseña restablecida para {_etiqueta(objetivo)}",
-            despues={"debe_cambiar_contrasena": True},
+            f"Contraseña restablecida para {_etiqueta(objetivo)}{origen}",
             ip=ip,
         )
-    return objetivo, temporal
+    return objetivo

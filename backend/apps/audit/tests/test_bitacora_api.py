@@ -497,33 +497,32 @@ def real_hasher(settings):
     cuentas.dummy_hash.cache_clear()
 
 
-def test_real_flows_never_leak_hashes_temporary_passwords_or_foreign_keys(real_hasher, admin):
+def test_real_flows_never_leak_hashes_passwords_or_foreign_keys(real_hasher, admin):
     """Con Argon2 real: crea, restablece, cambia, bloquea y falla; luego lee TODA la bitácora."""
+    clave_1, clave_2, clave_3 = (
+        "tornillo-azul-77-nube",
+        "nube-de-algodon-88-azul",
+        "cafe-con-leche-99",
+    )
     api = Api()
     assert api.login(admin.correo).status_code == 200
-    creado = api.post(
-        "/api/v1/usuarios/", {"nombre": "Luis", "correo": "luis@empresa.test", "rol": "TECNICO"}
-    ).json()
-    temporal_1 = creado["contrasena_temporal"]
+    api.post(
+        "/api/v1/usuarios/",
+        {"nombre": "Luis", "correo": "luis@empresa.test", "rol": "TECNICO", "contrasena": clave_1},
+    )
     otro = UsuarioFactory(correo="otro@empresa.test")
-    temporal_2 = api.post(f"/api/v1/usuarios/{otro.pk}/restablecer-contrasena/").json()[
-        "contrasena_temporal"
-    ]
+    api.post(f"/api/v1/usuarios/{otro.pk}/restablecer-contrasena/", {"contrasena": clave_2})
     api.call("PATCH", f"/api/v1/usuarios/{otro.pk}/", {"nombre": "Otro Nombre"})
     api.post(f"/api/v1/usuarios/{otro.pk}/cambiar-rol/", {"rol": "ESPECTADOR"})
     api.post(f"/api/v1/usuarios/{otro.pk}/desactivar/")
     api.post(f"/api/v1/usuarios/{otro.pk}/reactivar/")
-    luis = Api()
-    luis.login("luis@empresa.test", temporal_1)
-    luis.post(
-        CAMBIAR, {"contrasena_actual": temporal_1, "contrasena_nueva": "tornillo-azul-77-nube"}
-    )
+    api.post(CAMBIAR, {"contrasena_actual": DEFAULT_PASSWORD, "contrasena_nueva": clave_3})
+    api.post(CAMBIAR, {"contrasena_actual": "equivocada-77", "contrasena_nueva": clave_3})
     for _ in range(5):  # fallos y bloqueo
         Api().login("otro@empresa.test", "mal-intento-9")
     Api().login("nadie@empresa.test", "mal-intento-9")
-    api.get("/api/v1/auth/me/")  # refresca el token tras tantos logins
     api = Api()
-    api.login(admin.correo)
+    api.login(admin.correo, clave_3)
 
     eventos, _ = recorrer(api, "tamano=100")
 
@@ -533,9 +532,10 @@ def test_real_flows_never_leak_hashes_temporary_passwords_or_foreign_keys(real_h
         "argon2$",
         "pbkdf2",
         "md5$",
-        temporal_1,
-        temporal_2,
-        "tornillo-azul-77-nube",
+        clave_1,
+        clave_2,
+        clave_3,
+        "equivocada-77",
         "mal-intento-9",
         DEFAULT_PASSWORD,
         "nadie@empresa.test",  # el correo de un intento contra un usuario inexistente

@@ -72,9 +72,17 @@ docker compose -f deploy/docker-compose.yml --env-file .env --profile tools run 
 ```
 
 Pide la contraseña de forma interactiva (`CREAR_ADMIN_CONTRASENA` solo para instalaciones
-automatizadas) y obliga a cambiarla al primer inicio de sesión. Después, el administrador gestiona
-usuarios en `/api/v1/usuarios/`: la contraseña temporal de un usuario nuevo o restablecido se muestra
-**una sola vez** en la respuesta. No hay borrado ni desbloqueo manual de cuentas.
+automatizadas: bórrala del `.env` después de usarla). **Solo el administrador asigna y restablece
+contraseñas**: las escribe en `/api/v1/usuarios/` (campo `contrasena`, pasa por los validadores y nunca
+se devuelve) y los técnicos y espectadores no pueden cambiar la suya. Mantén **dos administradores
+activos**. Para recuperar un administrador desde el servidor:
+
+```sh
+docker compose -f deploy/docker-compose.yml --env-file .env --profile tools run --rm migrate \
+  python manage.py restablecer_admin admin@empresa.com
+```
+
+No hay borrado ni desbloqueo manual de cuentas.
 
 ## Bitácora
 

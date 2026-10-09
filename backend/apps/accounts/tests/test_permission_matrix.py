@@ -14,6 +14,7 @@ nada del código bajo prueba: si `ACCIONES_POR_ROL` se equivoca, la prueba no se
   Ver la bitácora de auditoría completa                         Sí      No       No
   Gestionar usuarios                                            Sí      No       No
   Gestionar catálogos y configuración [PROPUESTA]               Sí      No       No
+  Cambiar la propia contraseña (decisión de Vul, no está en §3) Sí      No       No
   Recibir correos de caducidad                                  Sí      Sí       No
 """
 
@@ -43,6 +44,7 @@ MATRIZ_SECCION_3 = {
     "VER_BITACORA": (True, False, False),
     "GESTIONAR_USUARIOS": (True, False, False),
     "GESTIONAR_CATALOGOS": (True, False, False),
+    "CAMBIAR_PROPIA_CONTRASENA": (True, False, False),  # solo el ADMIN asigna contraseñas
     "RECIBIR_CORREOS_CADUCIDAD": (True, True, False),
 }
 CASOS = [
@@ -154,17 +156,6 @@ def test_hiding_buttons_is_not_enough_a_spectator_cannot_delete_certificates_eve
     respuesta = api.call("DELETE", "/" + ruta_de(Accion.ELIMINAR_CERTIFICADO))
 
     assert respuesta.status_code == 403
-
-
-@pytest.mark.parametrize("rol", ROLES)
-@pytest.mark.parametrize("accion", sorted(MATRIZ_SECCION_3))
-def test_pending_password_change_blocks_every_role_and_action(accion, rol):
-    api = sesion(rol, debe_cambiar_contrasena=True)
-
-    respuesta = api.call("GET", "/" + ruta_de(accion_de(accion)))
-
-    assert respuesta.status_code == 403
-    assert respuesta.json()["codigo"] == "debe_cambiar_contrasena"
 
 
 # --- usuarios inactivos y desactivados ---------------------------------------------------------

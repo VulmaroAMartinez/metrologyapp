@@ -1,7 +1,7 @@
 """Endpoints de gestión de usuarios: solo ADMIN (acción GESTIONAR_USUARIOS).
 
-Sin borrado físico y sin desbloqueo manual. La contraseña temporal se devuelve una sola vez,
-en la respuesta de crear y de restablecer, con Cache-Control: no-store.
+Sin borrado físico y sin desbloqueo manual. Solo el administrador asigna contraseñas: las
+escribe en el cuerpo (`contrasena`) al crear y al restablecer, y nunca se devuelven.
 """
 
 from django.db.models import Q
@@ -19,6 +19,7 @@ from .serializers import (
     CrearUsuarioSerializer,
     EditarUsuarioSerializer,
     FiltrosUsuariosSerializer,
+    RestablecerContrasenaSerializer,
     UsuarioAdminSerializer,
 )
 from .views import respuesta
@@ -35,13 +36,6 @@ class PaginadorUsuarios(PageNumberPagination):
 
 def _error(error: services.ErrorDeUsuario):
     return respuesta({"codigo": error.codigo, "detalle": error.detalle}, status=error.estado)
-
-
-def _con_temporal(usuario, temporal, status=200):
-    # La única vez que se ve la contraseña temporal; no se puede volver a consultar.
-    return respuesta(
-        {**UsuarioAdminSerializer(usuario).data, "contrasena_temporal": temporal}, status=status
-    )
 
 
 def _listar(request):
@@ -70,12 +64,12 @@ def _crear(request):
     entrada = CrearUsuarioSerializer(data=request.data)
     entrada.is_valid(raise_exception=True)
     try:
-        usuario, temporal = services.crear_usuario(
+        usuario = services.crear_usuario(
             request.user.pk, ip=client_ip(request), **entrada.validated_data
         )
     except services.ErrorDeUsuario as error:
         return _error(error)
-    return _con_temporal(usuario, temporal, status=201)
+    return respuesta(UsuarioAdminSerializer(usuario).data, status=201)
 
 
 @api_view(["GET", "POST"])
@@ -140,10 +134,12 @@ def reactivar(request, pk):
 @api_view(["POST"])
 @permission_classes(PERMISOS)
 def restablecer_contrasena(request, pk):
+    entrada = RestablecerContrasenaSerializer(data=request.data)
+    entrada.is_valid(raise_exception=True)
     try:
-        objetivo, temporal = services.restablecer_contrasena(
-            request.user.pk, pk, ip=client_ip(request)
+        objetivo = services.restablecer_contrasena(
+            request.user.pk, pk, entrada.validated_data["contrasena"], ip=client_ip(request)
         )
     except services.ErrorDeUsuario as error:
         return _error(error)
-    return _con_temporal(objetivo, temporal)
+    return respuesta(UsuarioAdminSerializer(objetivo).data)

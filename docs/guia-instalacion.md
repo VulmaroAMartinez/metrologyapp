@@ -55,3 +55,35 @@ El valor por defecto (`.env.example`) abarca todos los rangos privados y sirve p
 `make test-proxy` comprueba este comportamiento contra el stack real: levanta una API en modo
 producción con la subred fija `172.29.250.0/24` y confirma que una cabecera falsificada no
 sirve para evadir el límite de intentos ni la redirección a HTTPS.
+
+## Contraseñas y administradores
+
+Solo el administrador asigna y restablece contraseñas: las escribe él al crear un usuario o al
+restablecerla, los técnicos y espectadores no pueden cambiar la suya y no hay contraseñas
+temporales ni cambio forzado al entrar. Por eso:
+
+1. **Mantén siempre dos administradores activos.** El sistema impide quedarse sin ninguno (nadie puede
+   desactivarse ni cambiarse el rol a sí mismo), pero con uno solo no hay quién restablezca su
+   contraseña desde la aplicación. Un administrador restablece la del otro con
+   `POST /api/v1/usuarios/<id>/restablecer-contrasena/`.
+2. **El administrador conoce las contraseñas de los usuarios** y debe tratarlas con cuidado: no
+   guardarlas en chats ni correos, entregarlas por un canal privado y no reutilizarlas.
+3. **Guarda la contraseña de cada administrador en un gestor de contraseñas** de la empresa.
+4. **La empresa debe tener a alguien con acceso al servidor** para el comando de recuperación, que es
+   la única salida si se pierden las contraseñas de los dos administradores:
+
+   ```sh
+   docker compose -f deploy/docker-compose.yml --env-file .env --profile tools run --rm migrate \
+     python manage.py restablecer_admin <correo-del-administrador>
+   ```
+
+   Pide la contraseña nueva dos veces, sin eco; solo funciona con usuarios de rol ADMIN; no toca los
+   contadores ni el bloqueo de la cuenta (si estaba bloqueada, seguirá así hasta que venza); cierra
+   sus sesiones y deja un evento de bitácora del Sistema («por comando de servidor»).
+
+### Primer administrador
+
+`manage.py crear_admin --correo <correo> --nombre "<nombre>"` pide la contraseña de forma interactiva.
+Solo en instalaciones automatizadas se admite la variable `CREAR_ADMIN_CONTRASENA`; en ese caso
+**el script de instalación debe borrarla del `.env` (y del entorno) inmediatamente después de usarla**;
+el comando lo recuerda con un aviso. La variable no figura en `.env.example` a propósito.

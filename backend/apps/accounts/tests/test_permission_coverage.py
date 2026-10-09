@@ -33,7 +33,7 @@ REGISTRO = {
     "api/v1/auth/login/": ({"POST"}, PUBLICO),
     "api/v1/auth/logout/": ({"POST"}, PUBLICO),
     "api/v1/auth/me/": ({"GET"}, AUTENTICADO),
-    "api/v1/auth/cambiar-contrasena/": ({"POST"}, AUTENTICADO),
+    "api/v1/auth/cambiar-contrasena/": ({"POST"}, "CAMBIAR_PROPIA_CONTRASENA"),  # solo ADMIN
     "api/v1/health/": ({"GET"}, PUBLICO),
     # Gestión de usuarios (commit 8): solo ADMIN.
     "api/v1/usuarios/": ({"GET", "POST"}, "GESTIONAR_USUARIOS"),

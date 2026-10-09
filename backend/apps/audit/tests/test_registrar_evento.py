@@ -73,7 +73,6 @@ def test_whitelisted_fields_are_accepted_and_dates_become_text():
             "numero_nomina": None,
             "rol": "ADMIN",
             "activo": True,
-            "debe_cambiar_contrasena": False,
             "bloqueado_hasta": datetime(2026, 10, 8, 12, 0, tzinfo=UTC),
             "motivo": "x",
         }
@@ -152,8 +151,7 @@ def test_the_whitelist_never_includes_secrets_or_counters():
     prohibidos = {"password", "intentos_fallidos", "last_login", "contrasena", "token"}
     assert not (CAMPOS_PERMITIDOS & prohibidos)
     assert not any("pass" in campo or "hash" in campo for campo in CAMPOS_PERMITIDOS)
-    # El único campo con "contrasena" es el indicador booleano de cambio obligatorio.
-    assert {c for c in CAMPOS_PERMITIDOS if "contrasena" in c} == {"debe_cambiar_contrasena"}
+    assert not {c for c in CAMPOS_PERMITIDOS if "contrasena" in c}
 
 
 # --- el cambio y su evento se confirman o se revierten juntos --------------------------------

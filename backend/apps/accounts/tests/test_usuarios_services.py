@@ -1,5 +1,5 @@
 """Servicios de gestión de usuarios: cada uno atómico con su evento, reglas de administradores,
-normalización, duplicados, contraseña temporal y sesiones."""
+normalización, duplicados, contraseñas escritas por el administrador y sesiones."""
 
 import json
 import logging
@@ -7,8 +7,8 @@ from datetime import timedelta
 from unittest import mock
 
 import pytest
-from django.contrib.auth.password_validation import validate_password
 from django.contrib.sessions.models import Session
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.test import override_settings
 from django.utils import timezone
@@ -23,6 +23,8 @@ from .factories import DEFAULT_PASSWORD, UsuarioFactory
 pytestmark = pytest.mark.django_db
 
 ADMIN, TECNICO, ESPECTADOR = Usuario.Rol.ADMIN, Usuario.Rol.TECNICO, Usuario.Rol.ESPECTADOR
+CLAVE = "tornillo-azul-77-nube"
+CLAVE_2 = "nube-de-algodon-88-azul"
 
 
 @pytest.fixture
@@ -41,7 +43,13 @@ def carla(db):
 
 
 def crear(actor, **extra):
-    datos = {"nombre": "Nuevo", "correo": "nuevo@empresa.test", "rol": TECNICO, **extra}
+    datos = {
+        "nombre": "Nuevo",
+        "correo": "nuevo@empresa.test",
+        "rol": TECNICO,
+        "contrasena": CLAVE,
+        **extra,
+    }
     return services.crear_usuario(actor.pk, **datos)
 
 
@@ -55,12 +63,23 @@ def volcado_eventos():
     return json.dumps(list(Evento.objects.values()), default=str, ensure_ascii=False)
 
 
-# --- crear: normalización y validación ----------------------------------------------------------
+# --- no quedan restos del modelo anterior ---
 
 
-def test_create_normalizes_fields_and_forces_a_password_change(ana):
-    usuario, temporal = crear(
-        ana, nombre="  Luis  Pérez ", correo="  Luis.Perez@Empresa.TEST ", numero_nomina="  A-77 "
+def test_there_is_no_forced_change_and_no_temporary_password_left():
+    campos = {campo.name for campo in Usuario._meta.get_fields()}
+
+    assert "debe_cambiar_contrasena" not in campos
+    assert not hasattr(services, "generar_contrasena_temporal")
+    assert not hasattr(services, "PasswordChangeNotRequired")
+
+
+# --- crear: normalización y validación ---
+
+
+def test_create_normalizes_fields_and_stores_the_password_the_admin_wrote(ana):
+    usuario = crear(
+        ana, nombre="  Luis  Pérez ", correo="  Luis.Perez@Empresa.TEST ", numero_nomina=" A-77 "
     )
 
     usuario.refresh_from_db()
@@ -69,14 +88,13 @@ def test_create_normalizes_fields_and_forces_a_password_change(ana):
         "luis.perez@empresa.test",
         "A-77",
     )
-    assert usuario.debe_cambiar_contrasena is True and usuario.activo is True
-    assert usuario.check_password(temporal)
+    assert usuario.activo is True and usuario.check_password(CLAVE)
     assert (usuario.intentos_fallidos, usuario.bloqueado_hasta) == (0, None)
 
 
 @pytest.mark.parametrize("vacio", ["", "   ", None])
 def test_blank_nomina_becomes_null(ana, vacio):
-    usuario, _ = crear(ana, numero_nomina=vacio)
+    usuario = crear(ana, numero_nomina=vacio)
 
     usuario.refresh_from_db()
     assert usuario.numero_nomina is None
@@ -104,12 +122,69 @@ def test_create_rejects_invalid_data(ana, campos, fragmento):
 
 
 def test_name_at_the_maximum_length_is_accepted(ana):
-    usuario, _ = crear(ana, nombre="x" * 150)
-
-    assert len(usuario.nombre) == 150
+    assert len(crear(ana, nombre="x" * 150).nombre) == 150
 
 
-# --- duplicados --------------------------------------------------------------------------------
+# --- la contraseña la escribe el administrador y pasa por los validadores ---
+
+
+@pytest.mark.parametrize(
+    ("contrasena", "fragmento"),
+    [
+        ("Ab1-cdef9", "10 caracteres"),
+        ("qwertyuiop", "muy común"),
+        ("48291746503", "numérica"),
+        ("nuevo@empresa.test1", "muy similar"),
+    ],
+)
+def test_create_runs_the_password_validators_without_echoing_it(ana, contrasena, fragmento):
+    with pytest.raises(services.DatosDeUsuarioInvalidos) as error:
+        crear(ana, contrasena=contrasena)
+
+    assert fragmento in error.value.detalle
+    assert contrasena not in error.value.detalle and contrasena not in str(error.value)
+    assert Usuario.objects.count() == 1 and Evento.objects.count() == 0
+
+
+@pytest.mark.parametrize(
+    ("contrasena", "fragmento"),
+    [("Ab1-cdef9", "10 caracteres"), ("qwertyuiop", "muy común"), ("48291746503", "numérica")],
+)
+def test_reset_runs_the_password_validators_without_echoing_it(ana, carla, contrasena, fragmento):
+    antes = instantanea()
+
+    with pytest.raises(services.DatosDeUsuarioInvalidos) as error:
+        services.restablecer_contrasena(ana.pk, carla.pk, contrasena)
+
+    assert fragmento in error.value.detalle and contrasena not in error.value.detalle
+    assert instantanea() == antes
+
+
+def test_reset_rejects_a_password_similar_to_the_targets_own_data(ana, carla):
+    with pytest.raises(services.DatosDeUsuarioInvalidos, match="muy similar"):
+        services.restablecer_contrasena(ana.pk, carla.pk, "carla@empresa.test1")
+
+
+def test_system_created_user_validates_the_given_password_without_echoing_it():
+    with pytest.raises(services.DatosDeUsuarioInvalidos) as error:
+        services.crear_usuario(
+            None, nombre="Raíz", correo="raiz@empresa.test", rol=ADMIN, contrasena="qwertyuiop"
+        )
+
+    assert "qwertyuiop" not in error.value.detalle
+
+
+def test_system_created_admin_has_no_actor():
+    usuario = services.crear_usuario(
+        None, nombre="Raíz", correo="raiz@empresa.test", rol=ADMIN, contrasena=CLAVE
+    )
+
+    assert usuario.check_password(CLAVE)
+    evento = Evento.objects.get()
+    assert (evento.tipo, evento.usuario) == ("USUARIO_CREADO", None)
+
+
+# --- duplicados ---
 
 
 @pytest.mark.parametrize(
@@ -169,79 +244,23 @@ def test_edit_can_keep_own_email_in_another_case(ana):
     assert Evento.objects.count() == 0  # no hubo cambio real
 
 
-# --- contraseña temporal ---
-
-
-def test_temporary_password_is_random_long_and_valid():
-    temporales = {services.generar_contrasena_temporal() for _ in range(40)}
-
-    assert len(temporales) == 40
-    for temporal in temporales:
-        assert len(temporal) >= 16
-        assert any(c.islower() for c in temporal) and any(c.isupper() for c in temporal)
-        assert any(c.isdigit() for c in temporal)
-        validate_password(temporal)
-
-
-def test_temporary_password_uses_the_secrets_module():
-    with mock.patch.object(services.secrets, "choice", wraps=services.secrets.choice) as choice:
-        services.generar_contrasena_temporal()
-
-    assert choice.call_count >= services.LONGITUD_TEMPORAL
-
-
-def test_temporary_password_grows_with_the_configured_minimum(settings):
-    settings.AUTH_PASSWORD_VALIDATORS = [
-        {
-            "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-            "OPTIONS": {"min_length": 30},
-        }
-    ]
-
-    assert len(services.generar_contrasena_temporal()) >= 30
-
-
-def test_temporary_password_never_matches_the_users_own_data():
-    candidato = Usuario(nombre="Guadalupe", correo="guadalupe@empresa.test")
-
-    validate_password(services.generar_contrasena_temporal(candidato), candidato)
-
-
-def test_system_created_user_validates_the_given_password_without_echoing_it():
-    with pytest.raises(services.DatosDeUsuarioInvalidos) as error:
-        services.crear_usuario(
-            None, nombre="Raíz", correo="raiz@empresa.test", rol=ADMIN, contrasena="qwertyuiop"
-        )
-
-    assert "qwertyuiop" not in error.value.detalle
-
-
-def test_system_created_admin_has_no_actor_and_must_change_the_password():
-    usuario, temporal = services.crear_usuario(
-        None,
-        nombre="Raíz",
-        correo="raiz@empresa.test",
-        rol=ADMIN,
-        contrasena="tornillo-azul-77-nube",
-    )
-
-    assert temporal is None and usuario.debe_cambiar_contrasena is True
-    evento = Evento.objects.get()
-    assert (evento.tipo, evento.usuario) == ("USUARIO_CREADO", None)
-
-
 # --- eventos y restricciones por servicio ---
 
 
 def test_every_service_writes_its_event_with_actor_and_ip(ana, carla):
-    usuario, _ = services.crear_usuario(
-        ana.pk, nombre="Ex", correo="ex@empresa.test", rol=ESPECTADOR, ip="203.0.113.4"
+    usuario = services.crear_usuario(
+        ana.pk,
+        nombre="Ex",
+        correo="ex@empresa.test",
+        rol=ESPECTADOR,
+        contrasena=CLAVE,
+        ip="203.0.113.4",
     )
     services.editar_usuario(ana.pk, usuario.pk, {"nombre": "Ex Dos"}, ip="203.0.113.4")
     services.cambiar_rol(ana.pk, usuario.pk, TECNICO, ip="203.0.113.4")
     services.desactivar_usuario(ana.pk, usuario.pk, ip="203.0.113.4")
     services.reactivar_usuario(ana.pk, usuario.pk, ip="203.0.113.4")
-    services.restablecer_contrasena(ana.pk, usuario.pk, ip="203.0.113.4")
+    services.restablecer_contrasena(ana.pk, usuario.pk, CLAVE_2, ip="203.0.113.4")
 
     eventos = list(Evento.objects.order_by("id"))
     assert [e.tipo for e in eventos] == [
@@ -269,6 +288,17 @@ def test_event_payloads_carry_before_and_after(ana, carla):
     assert (desactivado.antes, desactivado.despues) == ({"activo": True}, {"activo": False})
 
 
+def test_the_reset_event_names_actor_and_target_and_carries_no_payload(ana, carla):
+    services.restablecer_contrasena(ana.pk, carla.pk, CLAVE_2, ip="198.51.100.9")
+
+    evento = Evento.objects.get()
+    assert evento.tipo == "USUARIO_CONTRASENA_RESTABLECIDA"
+    assert evento.usuario == ana  # quien actúa
+    assert "carla@empresa.test" in evento.descripcion  # el afectado
+    assert (evento.antes, evento.despues) == (None, None)
+    assert CLAVE_2 not in volcado_eventos()
+
+
 def test_noop_operations_write_nothing(ana, carla):
     services.editar_usuario(ana.pk, carla.pk, {"nombre": "Carla"})
     services.cambiar_rol(ana.pk, carla.pk, TECNICO)
@@ -284,13 +314,13 @@ def test_noop_operations_write_nothing(ana, carla):
 
 OPERACIONES = {
     "crear": lambda a, t: services.crear_usuario(
-        a.pk, nombre="Otro", correo="otro@empresa.test", rol=TECNICO
+        a.pk, nombre="Otro", correo="otro@empresa.test", rol=TECNICO, contrasena=CLAVE
     ),
     "editar": lambda a, t: services.editar_usuario(a.pk, t.pk, {"nombre": "Cambiado"}),
     "cambiar_rol": lambda a, t: services.cambiar_rol(a.pk, t.pk, ESPECTADOR),
     "desactivar": lambda a, t: services.desactivar_usuario(a.pk, t.pk),
     "reactivar": lambda a, t: services.reactivar_usuario(a.pk, t.pk),
-    "restablecer": lambda a, t: services.restablecer_contrasena(a.pk, t.pk),
+    "restablecer": lambda a, t: services.restablecer_contrasena(a.pk, t.pk, CLAVE_2),
 }
 
 
@@ -359,7 +389,7 @@ def test_an_admin_cannot_deactivate_change_role_or_reset_their_own_password(ana,
     for operacion in (
         lambda: services.desactivar_usuario(ana.pk, ana.pk),
         lambda: services.cambiar_rol(ana.pk, ana.pk, TECNICO),
-        lambda: services.restablecer_contrasena(ana.pk, ana.pk),
+        lambda: services.restablecer_contrasena(ana.pk, ana.pk, CLAVE_2),
     ):
         with pytest.raises(services.AutoModificacionNoPermitida) as error:
             operacion()
@@ -368,7 +398,7 @@ def test_an_admin_cannot_deactivate_change_role_or_reset_their_own_password(ana,
 
     ana.refresh_from_db()
     assert ana.activo is True and ana.rol == ADMIN
-    assert ana.password == clave_antes and ana.debe_cambiar_contrasena is False
+    assert ana.password == clave_antes
     assert Evento.objects.count() == 0
 
 
@@ -377,6 +407,16 @@ def test_an_admin_can_edit_their_own_data(ana):
 
     ana.refresh_from_db()
     assert ana.nombre == "Ana María"
+
+
+def test_an_admin_can_reset_the_other_admins_password(ana, beto):
+    sesion_de(beto)
+
+    services.restablecer_contrasena(ana.pk, beto.pk, CLAVE_2)
+
+    beto.refresh_from_db()
+    assert beto.check_password(CLAVE_2) and not beto.check_password(DEFAULT_PASSWORD)
+    assert not Session.objects.exists()  # sus sesiones se cerraron
 
 
 def test_an_admin_can_demote_and_deactivate_another_admin(ana, beto):
@@ -428,6 +468,39 @@ def test_unknown_target_is_404(operacion, ana):
     assert error.value.estado == 404
 
 
+# --- el restablecimiento por el Sistema (comando de servidor) ---
+
+
+def test_the_system_can_reset_an_admin_without_an_actor(ana):
+    services.restablecer_contrasena(None, ana.pk, CLAVE_2, solo_rol=ADMIN)
+
+    ana.refresh_from_db()
+    assert ana.check_password(CLAVE_2)
+    evento = Evento.objects.get()
+    assert evento.tipo == "USUARIO_CONTRASENA_RESTABLECIDA" and evento.usuario is None
+    assert (
+        "por comando de servidor" in evento.descripcion and "ana@empresa.test" in evento.descripcion
+    )
+
+
+def test_the_system_reset_refuses_non_admins(carla):
+    antes = instantanea()
+
+    with pytest.raises(services.DatosDeUsuarioInvalidos, match="no es administrador"):
+        services.restablecer_contrasena(None, carla.pk, CLAVE_2, solo_rol=ADMIN)
+
+    assert instantanea() == antes
+
+
+def test_the_system_reset_works_even_for_the_only_admin_and_does_not_reactivate(ana):
+    Usuario.objects.filter(pk=ana.pk).update(activo=False)
+
+    services.restablecer_contrasena(None, ana.pk, CLAVE_2, solo_rol=ADMIN)
+
+    ana.refresh_from_db()
+    assert ana.check_password(CLAVE_2) and ana.activo is False
+
+
 # --- restablecer / reactivar / desactivar no son un desbloqueo ---
 
 
@@ -437,12 +510,22 @@ def test_resetting_the_password_does_not_touch_the_lock_counters(ana):
         correo="bloqueada@empresa.test", intentos_fallidos=5, bloqueado_hasta=bloqueo
     )
 
-    _, temporal = services.restablecer_contrasena(ana.pk, bloqueada.pk)
+    services.restablecer_contrasena(ana.pk, bloqueada.pk, CLAVE_2)
 
     bloqueada.refresh_from_db()
     assert bloqueada.intentos_fallidos == 5  # sigue igual
     assert bloqueada.bloqueado_hasta == bloqueo  # sigue bloqueada: no es un desbloqueo manual
-    assert bloqueada.check_password(temporal) and bloqueada.debe_cambiar_contrasena is True
+    assert bloqueada.check_password(CLAVE_2)
+
+
+def test_the_system_reset_does_not_touch_the_lock_counters_either(ana):
+    bloqueo = timezone.now() + timedelta(minutes=10)
+    Usuario.objects.filter(pk=ana.pk).update(intentos_fallidos=5, bloqueado_hasta=bloqueo)
+
+    services.restablecer_contrasena(None, ana.pk, CLAVE_2, solo_rol=ADMIN)
+
+    ana.refresh_from_db()
+    assert (ana.intentos_fallidos, ana.bloqueado_hasta) == (5, bloqueo)
 
 
 def test_deactivating_and_reactivating_do_not_touch_the_lock_counters(ana):
@@ -497,7 +580,7 @@ def test_deactivate_and_reset_close_the_targets_sessions_in_the_same_transaction
     carla.activo = True
     carla.save()
     sesion_de(carla)
-    services.restablecer_contrasena(ana.pk, carla.pk)
+    services.restablecer_contrasena(ana.pk, carla.pk, CLAVE_2)
     assert not Session.objects.exists()
 
 
@@ -511,14 +594,14 @@ def test_a_role_change_keeps_the_session_but_not_the_old_permissions(ana, carla)
     )  # la sesión sigue; el rol se lee de la base en cada petición
 
 
-# --- nada sensible en eventos ni logs ---
+# --- nada sensible en eventos, logs, errores ni trazas ---
 
 
-def test_no_temporary_password_or_hash_reaches_events_or_logs(ana, carla, caplog):
+def test_no_password_or_hash_reaches_events_or_logs(ana, carla, caplog):
     caplog.set_level(logging.DEBUG)
 
-    usuario, t_creada = crear(ana)
-    _, t_restablecida = services.restablecer_contrasena(ana.pk, carla.pk)
+    usuario = crear(ana)
+    services.restablecer_contrasena(ana.pk, carla.pk, CLAVE_2)
     services.editar_usuario(ana.pk, usuario.pk, {"nombre": "Otro Nombre"})
     services.cambiar_rol(ana.pk, usuario.pk, ESPECTADOR)
     services.desactivar_usuario(ana.pk, usuario.pk)
@@ -527,39 +610,52 @@ def test_no_temporary_password_or_hash_reaches_events_or_logs(ana, carla, caplog
     carla.refresh_from_db()
 
     texto = volcado_eventos() + caplog.text
-    for secreto in (t_creada, t_restablecida, usuario.password, carla.password, DEFAULT_PASSWORD):
+    for secreto in (CLAVE, CLAVE_2, usuario.password, carla.password, DEFAULT_PASSWORD):
         assert secreto not in texto
     assert "argon2" not in texto and "md5$" not in texto
 
 
-def test_the_temporary_password_does_not_leak_through_error_messages(ana, caplog):
+@pytest.mark.parametrize(
+    "operacion",
+    [
+        lambda ana, carla: services.crear_usuario(
+            ana.pk, nombre="Otro", correo="otro@empresa.test", rol=TECNICO, contrasena=CLAVE
+        ),
+        lambda ana, carla: services.restablecer_contrasena(ana.pk, carla.pk, CLAVE),
+    ],
+    ids=["crear", "restablecer"],
+)
+def test_a_failure_in_the_middle_never_leaks_the_password_through_the_error_or_logs(
+    operacion, ana, carla, caplog
+):
     caplog.set_level(logging.DEBUG)
-    generada = []
-    real = services.generar_contrasena_temporal
-
-    def espiar(*args, **kwargs):
-        generada.append(real(*args, **kwargs))
-        return generada[-1]
 
     with (
-        mock.patch.object(services, "generar_contrasena_temporal", side_effect=espiar),
         mock.patch.object(services, "registrar_evento", side_effect=RuntimeError("falla")),
         pytest.raises(RuntimeError) as error,
     ):
-        crear(ana)
+        operacion(ana, carla)
 
-    assert generada and generada[0] not in str(error.value)
-    assert generada[0] not in caplog.text
+    assert CLAVE not in str(error.value) and CLAVE not in caplog.text
+
+
+def test_validator_failures_never_leak_the_password_through_logs(ana, carla, caplog):
+    caplog.set_level(logging.DEBUG)
+
+    with pytest.raises(services.DatosDeUsuarioInvalidos):
+        services.restablecer_contrasena(ana.pk, carla.pk, "carla@empresa.test1")
+
+    assert "carla@empresa.test1" not in caplog.text
 
 
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.Argon2PasswordHasher"])
 def test_a_created_user_authenticates_with_the_real_hasher(ana):
-    usuario, temporal = crear(ana)
+    usuario = crear(ana)
 
-    assert usuario.password.startswith("argon2$argon2id$") and usuario.check_password(temporal)
+    assert usuario.password.startswith("argon2$argon2id$") and usuario.check_password(CLAVE)
 
 
-# --- ramas restantes ---------------------------------------------------------------------------
+# --- ramas restantes ---
 
 
 def test_a_well_formed_but_overlong_email_is_rejected(ana):
@@ -567,22 +663,6 @@ def test_a_well_formed_but_overlong_email_is_rejected(ana):
 
     with pytest.raises(services.DatosDeUsuarioInvalidos, match="largo"):
         crear(ana, correo=largo)
-
-
-def test_a_candidate_rejected_by_the_validators_is_discarded_and_regenerated():
-    from django.core.exceptions import ValidationError
-
-    intentos = []
-
-    def rechaza_la_primera(candidata, usuario=None):
-        intentos.append(candidata)
-        if len(intentos) == 1:
-            raise ValidationError("demasiado parecida")
-
-    with mock.patch.object(services, "validate_password", side_effect=rechaza_la_primera):
-        elegida = services.generar_contrasena_temporal()
-
-    assert len(intentos) == 2 and elegida == intentos[1] and elegida != intentos[0]
 
 
 def test_edit_resolves_a_unique_index_clash_when_the_precheck_is_bypassed(ana, beto):
@@ -597,3 +677,11 @@ def test_edit_resolves_a_unique_index_clash_when_the_precheck_is_bypassed(ana, b
 def test_change_role_rejects_an_unknown_role(ana, carla):
     with pytest.raises(services.DatosDeUsuarioInvalidos):
         services.cambiar_rol(ana.pk, carla.pk, "SUPERADMIN")
+
+
+def test_a_validator_rejection_message_is_built_from_the_validators_text(ana, carla):
+    with mock.patch.object(
+        services, "validate_password", side_effect=ValidationError(["Regla incumplida."])
+    ):
+        with pytest.raises(services.DatosDeUsuarioInvalidos, match="Regla incumplida"):
+            services.restablecer_contrasena(ana.pk, carla.pk, CLAVE)

@@ -11,6 +11,7 @@ from apps.core.network import client_ip
 from apps.core.ratelimit import check_rate
 
 from . import services
+from .permissions import Accion, requiere
 from .serializers import CambiarContrasenaSerializer, LoginSerializer, UsuarioActualSerializer
 
 logger = logging.getLogger(__name__)
@@ -79,13 +80,13 @@ def logout(request):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])  # accesible aunque haya cambio de contraseña pendiente
+@permission_classes([IsAuthenticated])  # cualquier rol autenticado
 def me(request):
     return respuesta(UsuarioActualSerializer(request.user).data)
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])  # accesible aunque haya cambio de contraseña pendiente
+@permission_classes([requiere(Accion.CAMBIAR_PROPIA_CONTRASENA)])  # solo ADMIN
 def cambiar_contrasena(request):
     serializer = CambiarContrasenaSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)

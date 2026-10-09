@@ -26,7 +26,7 @@ class UsuarioActualSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Usuario
-        fields = ["id", "nombre", "correo", "rol", "numero_nomina", "debe_cambiar_contrasena"]
+        fields = ["id", "nombre", "correo", "rol", "numero_nomina"]
         read_only_fields = fields
 
 
@@ -48,7 +48,6 @@ class UsuarioAdminSerializer(serializers.ModelSerializer):
             "numero_nomina",
             "rol",
             "activo",
-            "debe_cambiar_contrasena",
             "creado_en",
             "bloqueado_hasta",
         ]
@@ -73,6 +72,10 @@ class CrearUsuarioSerializer(EstrictoSerializer):
     nombre = serializers.CharField(max_length=150)
     correo = serializers.EmailField(max_length=254)
     rol = serializers.ChoiceField(choices=Usuario.Rol.choices)
+    # La escribe el administrador; pasa por los validadores y nunca se devuelve ni se registra.
+    contrasena = serializers.CharField(
+        max_length=MAX_PASSWORD_LENGTH, trim_whitespace=False, write_only=True
+    )
     numero_nomina = serializers.CharField(
         max_length=20, required=False, allow_null=True, allow_blank=True
     )
@@ -83,6 +86,12 @@ class EditarUsuarioSerializer(EstrictoSerializer):
     correo = serializers.EmailField(max_length=254, required=False)
     numero_nomina = serializers.CharField(
         max_length=20, required=False, allow_null=True, allow_blank=True
+    )
+
+
+class RestablecerContrasenaSerializer(EstrictoSerializer):
+    contrasena = serializers.CharField(
+        max_length=MAX_PASSWORD_LENGTH, trim_whitespace=False, write_only=True
     )
 
 

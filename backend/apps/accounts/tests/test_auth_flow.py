@@ -7,7 +7,7 @@ from .factories import DEFAULT_PASSWORD, UsuarioFactory
 
 pytestmark = pytest.mark.django_db
 
-CAMPOS_PUBLICOS = {"id", "nombre", "correo", "rol", "numero_nomina", "debe_cambiar_contrasena"}
+CAMPOS_PUBLICOS = {"id", "nombre", "correo", "rol", "numero_nomina"}
 
 
 def test_csrf_endpoint_returns_token_and_sets_cookie(api):
@@ -30,7 +30,6 @@ def test_login_returns_the_public_profile_only(api, usuario):
         "correo": "ana@empresa.test",
         "rol": "ADMIN",
         "numero_nomina": None,
-        "debe_cambiar_contrasena": False,
     }
     assert respuesta["Cache-Control"] == "no-store"
 
