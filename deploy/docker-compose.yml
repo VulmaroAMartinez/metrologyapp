@@ -94,8 +94,9 @@ services:
       COVERAGE_FILE: /tmp/.coverage
       APP_DB_PASSWORD: ${APP_PASSWORD:?Falta APP_PASSWORD en .env} # solo para probar los privilegios del rol app
     volumes:
-      - ../.env.example:/app/.env.example:ro
-      - ./db/privileges.sql:/app/db/privileges.sql:ro # las pruebas de roles lo aplican a su base propia
+      # Fuera de /app: si se monta backend/ sobre /app, Docker no crea archivos vacíos en el repo.
+      - ../.env.example:/opt/test/.env.example:ro
+      - ./db/privileges.sql:/opt/test/privileges.sql:ro # las pruebas de roles lo aplican a su base propia
     depends_on:
       db: {condition: service_healthy}
     read_only: true

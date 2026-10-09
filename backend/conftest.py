@@ -36,7 +36,7 @@ def clock():
 # --- base de datos propia para las pruebas de roles ------------------------------------------
 
 ROLES_TEST_DB = "metrologia_roles_test"
-PRIVILEGES_SQL = Path(os.environ.get("PRIVILEGES_SQL", "/app/db/privileges.sql"))
+PRIVILEGES_SQL = Path(os.environ.get("PRIVILEGES_SQL", "/opt/test/privileges.sql"))
 BACKEND_DIR = Path(__file__).resolve().parent
 
 

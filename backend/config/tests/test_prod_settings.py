@@ -8,7 +8,7 @@ from django.core.exceptions import ImproperlyConfigured
 from config.settings.guards import DEFAULT_TRUSTED_PROXY_CIDRS, validate_production
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
-ENV_EXAMPLE = Path("/app/.env.example")  # montado por el servicio `test` del compose
+ENV_EXAMPLE = Path("/opt/test/.env.example")  # montado por el servicio `test` del compose
 GOOD_SECRET = "k" * 64
 
 GOOD_ENV = {
@@ -23,7 +23,7 @@ GOOD_ENV = {
 
 
 def load_env_example() -> dict[str, str]:
-    assert ENV_EXAMPLE.exists(), "El servicio test debe montar .env.example en /app/.env.example"
+    assert ENV_EXAMPLE.exists(), "El servicio test debe montar .env.example en /opt/test/.env.example"
     pairs = (
         line.split("=", 1)
         for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines()
