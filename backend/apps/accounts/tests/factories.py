@@ -15,7 +15,7 @@ class UsuarioFactory(factory.django.DjangoModelFactory):
     rol = Usuario.Rol.TECNICO
 
     @factory.post_generation
-    def password(obj, create, extracted, **kwargs):  # noqa: N805
+    def password(obj, create, extracted, **kwargs):
         obj.set_password(extracted or DEFAULT_PASSWORD)
         if create:
             obj.save()

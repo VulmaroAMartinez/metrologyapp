@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -73,7 +75,7 @@ class Evento(models.Model):
     objects = EventoQuerySet.as_manager()
 
     class Meta:
-        indexes = [
+        indexes: ClassVar[list] = [
             # Paginación por cursor de la bitácora: ORDER BY ocurrido_en DESC, id DESC. Su primer
             # campo también cubre las búsquedas por rango de fechas.
             models.Index(fields=["-ocurrido_en", "-id"], name="evento_ocurrido_id_idx"),
@@ -81,7 +83,7 @@ class Evento(models.Model):
             models.Index(fields=["tipo"], name="evento_tipo_idx"),
             models.Index(fields=["instrumento_id"], name="evento_instrumento_idx"),
         ]
-        constraints = [
+        constraints: ClassVar[list] = [
             models.CheckConstraint(
                 condition=models.Q(tipo__in=TipoEvento.values), name="evento_tipo_valido"
             ),

@@ -152,7 +152,8 @@ def test_a_deep_page_costs_the_same_as_the_first_one(cien_mil):
     assert sin_seq_scan(plan) == []
     assert filas_leidas <= 100
     paginas, siguiente = consultar_eventos(FiltrosEventos(), profundo, 25)
-    assert len(paginas) == 25 and siguiente
+    assert len(paginas) == 25
+    assert siguiente
 
 
 # --- tiempos ---
@@ -205,8 +206,10 @@ def test_the_whole_log_can_be_walked_in_pages_without_count_or_offset(cien_mil, 
         siguiente = cuerpo["next"]
         ruta = f"{urlparse(siguiente).path}?{urlparse(siguiente).query}" if siguiente else None
 
-    assert vistos == 1200 and paginas == 12
-    assert "COUNT(" not in sql.upper() and "OFFSET" not in sql.upper()
+    assert vistos == 1200
+    assert paginas == 12
+    assert "COUNT(" not in sql.upper()
+    assert "OFFSET" not in sql.upper()
 
 
 def test_cursor_round_trip_matches_the_seeded_order(cien_mil):

@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.db import models
 from django.db.models.functions import Lower
@@ -27,10 +29,10 @@ class Usuario(AbstractBaseUser):
 
     USERNAME_FIELD = "correo"
     EMAIL_FIELD = "correo"
-    REQUIRED_FIELDS = ["nombre", "rol"]
+    REQUIRED_FIELDS: ClassVar[list[str]] = ["nombre", "rol"]
 
     class Meta:
-        constraints = [
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(Lower("correo"), name="usuario_correo_unico_ci"),
             models.UniqueConstraint(
                 Lower("numero_nomina"),

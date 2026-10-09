@@ -118,18 +118,24 @@ def test_cookies_through_caddy_in_development_have_the_documented_attributes(adm
     estado, _, _ = cliente.pedir(
         "POST", "/api/v1/auth/login/", {"correo": "nadie@empresa.test", "contrasena": "x-mala-1"}
     )
-    assert estado == 401 and cliente.set_cookie == []  # un login fallido no fija ninguna cookie
+    assert estado == 401
+    assert cliente.set_cookie == []
 
     estado, _, _ = cliente.pedir(
         "POST", "/api/v1/auth/login/", {"correo": ADMIN_CORREO, "contrasena": ADMIN_CLAVE}
     )
     cookies = cookies_por_nombre(cliente.set_cookie)
-    assert estado == 200 and set(cookies) == {"sessionid", "csrftoken"}
+    assert estado == 200
+    assert set(cookies) == {"sessionid", "csrftoken"}
     sesion = cookies["sessionid"]
-    assert sesion["httponly"] is True and sesion["samesite"] == "Lax"
-    assert sesion["path"] == "/" and sesion["max-age"] == "1800"
-    assert "domain" not in sesion and "secure" not in sesion  # Secure solo en producción (HTTPS)
-    assert cookies["csrftoken"]["httponly"] is True and cookies["csrftoken"]["samesite"] == "Lax"
+    assert sesion["httponly"] is True
+    assert sesion["samesite"] == "Lax"
+    assert sesion["path"] == "/"
+    assert sesion["max-age"] == "1800"
+    assert "domain" not in sesion
+    assert "secure" not in sesion
+    assert cookies["csrftoken"]["httponly"] is True
+    assert cookies["csrftoken"]["samesite"] == "Lax"
 
     cliente.obtener_csrf()  # el token rota al iniciar sesión
     assert cliente.pedir("POST", "/api/v1/auth/logout/", {})[0] == 204
@@ -179,21 +185,29 @@ def test_production_security_headers_include_hsts_and_frame_denial(produccion):
 def test_production_cookies_are_secure_host_prefixed_and_a_failed_login_sets_none(produccion):
     produccion.pedir("GET", "/api/v1/auth/csrf/")
     csrf = cookies_por_nombre(produccion.set_cookie)["__Host-csrftoken"]
-    assert csrf["secure"] is True and csrf["httponly"] is True
-    assert csrf["samesite"] == "Lax" and csrf["path"] == "/" and "domain" not in csrf
+    assert csrf["secure"] is True
+    assert csrf["httponly"] is True
+    assert csrf["samesite"] == "Lax"
+    assert csrf["path"] == "/"
+    assert "domain" not in csrf
 
     estado, _, _ = produccion.pedir(
         "POST", "/api/v1/auth/login/", {"correo": "nadie@empresa.test", "contrasena": "x-mala-1"}
     )
-    assert estado == 401 and produccion.set_cookie == []  # sin cookies en el 401 del login
+    assert estado == 401
+    assert produccion.set_cookie == []
 
     estado, _, _ = produccion.pedir(
         "POST", "/api/v1/auth/login/", {"correo": ADMIN_CORREO, "contrasena": ADMIN_CLAVE}
     )
     cookies = cookies_por_nombre(produccion.set_cookie)
-    assert estado == 200 and {"__Host-sessionid", "__Host-csrftoken"} <= set(cookies)
+    assert estado == 200
+    assert {"__Host-sessionid", "__Host-csrftoken"} <= set(cookies)
     sesion = cookies["__Host-sessionid"]
-    assert sesion["secure"] is True and sesion["httponly"] is True
-    assert sesion["samesite"] == "Lax" and sesion["path"] == "/" and "domain" not in sesion
+    assert sesion["secure"] is True
+    assert sesion["httponly"] is True
+    assert sesion["samesite"] == "Lax"
+    assert sesion["path"] == "/"
+    assert "domain" not in sesion
     assert sesion["max-age"] == "1800"
     assert "sessionid" not in cookies  # la cookie sin prefijo no existe en producción

@@ -37,7 +37,7 @@ def load_env_example() -> dict[str, str]:
 def import_prod(**overrides: str) -> subprocess.CompletedProcess:
     env = {**GOOD_ENV, **overrides}
     env = {key: value for key, value in env.items() if value is not None}
-    return subprocess.run(  # noqa: S603
+    return subprocess.run(
         [sys.executable, "-c", "import config.settings.prod"],
         cwd=BACKEND_DIR,
         env=env,
@@ -118,7 +118,8 @@ def test_validator_accepts_narrow_trusted_proxies(cidrs):
 def test_validator_reports_every_problem():
     with pytest.raises(ImproperlyConfigured) as error:
         validate_production(**good_args(debug=True, allowed_hosts=[]))
-    assert "DJANGO_DEBUG" in str(error.value) and "ALLOWED_HOSTS" in str(error.value)
+    assert "DJANGO_DEBUG" in str(error.value)
+    assert "ALLOWED_HOSTS" in str(error.value)
 
 
 @pytest.mark.parametrize(
@@ -142,7 +143,7 @@ def test_prod_refuses_to_start(overrides, expected):
 
 def test_prod_refuses_to_start_without_secret_key():
     env = {k: v for k, v in GOOD_ENV.items() if k != "DJANGO_SECRET_KEY"}
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(
         [sys.executable, "-c", "import config.settings.prod"],
         cwd=BACKEND_DIR,
         env=env,
@@ -209,7 +210,7 @@ def test_prod_hides_schema_and_exempts_health_from_https_redirect():
 def test_prod_refuses_to_start_when_trusted_proxies_are_left_at_the_default():
     # Sin la variable, base.py usa el valor por defecto de desarrollo (todos los rangos privados).
     env = {k: v for k, v in GOOD_ENV.items() if k != "TRUSTED_PROXY_CIDRS"}
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(
         [sys.executable, "-c", "import config.settings.prod"],
         cwd=BACKEND_DIR,
         env=env,

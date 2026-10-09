@@ -149,7 +149,8 @@ def test_statuses_are_the_expected_ones(prod):
 
 def test_hsts_is_only_sent_over_https_and_http_is_redirected(prod):
     redireccion = prod["http_csrf"]
-    assert redireccion["estado"] == 301 and redireccion["location"].startswith("https://")
+    assert redireccion["estado"] == 301
+    assert redireccion["location"].startswith("https://")
     assert "strict-transport-security" not in redireccion["cabeceras"]
     # El healthcheck interno va por HTTP y está exento de la redirección, pero sin HSTS.
     assert prod["http_health"]["estado"] == 200
@@ -163,9 +164,11 @@ def test_production_cookies_are_secure_httponly_samesite_and_host_prefixed(prod)
     assert set(csrf) == {"__Host-csrftoken"}
     assert {"__Host-sessionid", "__Host-csrftoken"} <= set(sesion)
     for cookie in [*csrf.values(), *sesion.values()]:
-        assert cookie["secure"] and cookie["httponly"]
+        assert cookie["secure"]
+        assert cookie["httponly"]
         assert cookie["samesite"] == "Lax"
-        assert cookie["path"] == "/" and cookie["domain"] == ""  # requisitos de __Host-
+        assert cookie["path"] == "/"
+        assert cookie["domain"] == ""
     assert sesion["__Host-sessionid"]["max_age"] == 1800
 
 

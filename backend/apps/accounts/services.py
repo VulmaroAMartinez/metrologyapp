@@ -52,11 +52,11 @@ class ResultadoLogin:
     motivo: MotivoFallo | None
 
 
-class ContrasenaActualIncorrecta(Exception):  # noqa: N818
+class ContrasenaActualIncorrecta(Exception):
     pass
 
 
-class ContrasenaRepetida(Exception):  # noqa: N818
+class ContrasenaRepetida(Exception):
     pass
 
 

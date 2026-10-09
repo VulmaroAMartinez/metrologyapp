@@ -5,18 +5,21 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('accounts', '0002_numero_nomina_nulo_y_unico'),
+        ("accounts", "0002_numero_nomina_nulo_y_unico"),
     ]
 
     operations = [
         migrations.RemoveConstraint(
-            model_name='usuario',
-            name='usuario_nomina_unica',
+            model_name="usuario",
+            name="usuario_nomina_unica",
         ),
         migrations.AddConstraint(
-            model_name='usuario',
-            constraint=models.UniqueConstraint(django.db.models.functions.text.Lower('numero_nomina'), condition=models.Q(('numero_nomina__isnull', False)), name='usuario_nomina_unica'),
+            model_name="usuario",
+            constraint=models.UniqueConstraint(
+                django.db.models.functions.text.Lower("numero_nomina"),
+                condition=models.Q(("numero_nomina__isnull", False)),
+                name="usuario_nomina_unica",
+            ),
         ),
     ]

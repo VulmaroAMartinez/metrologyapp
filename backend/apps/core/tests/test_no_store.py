@@ -27,4 +27,5 @@ def test_every_api_response_is_marked_no_store(metodo, ruta, estado):
 def test_responses_outside_the_api_are_left_alone():
     respuesta = Client().get("/fuera-de-la-api/")
 
-    assert respuesta.status_code == 404 and "Cache-Control" not in respuesta
+    assert respuesta.status_code == 404
+    assert "Cache-Control" not in respuesta

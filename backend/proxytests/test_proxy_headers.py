@@ -134,7 +134,8 @@ def test_control_a_trusted_proxy_can_declare_https():
     assert sin_cabecera[0] == 301
     assert con_cabecera[0] == 200
     assert re.match(r"__Host-csrftoken=", con_cabecera[2][0])
-    assert "Secure" in con_cabecera[2][0] and "HttpOnly" in con_cabecera[2][0]
+    assert "Secure" in con_cabecera[2][0]
+    assert "HttpOnly" in con_cabecera[2][0]
 
 
 def test_the_production_api_hides_the_openapi_schema_through_the_proxy():

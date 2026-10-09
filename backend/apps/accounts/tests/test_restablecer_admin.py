@@ -36,9 +36,11 @@ def test_it_asks_twice_without_echo_and_sets_the_new_password(admin, capsys):
 
     admin.refresh_from_db()
     assert pedir.call_count == 2  # getpass: sin eco
-    assert admin.check_password(NUEVA) and not admin.check_password(DEFAULT_PASSWORD)
+    assert admin.check_password(NUEVA)
+    assert not admin.check_password(DEFAULT_PASSWORD)
     salida = capsys.readouterr().out
-    assert "admin@empresa.test" in salida and NUEVA not in salida
+    assert "admin@empresa.test" in salida
+    assert NUEVA not in salida
     assert Api().login(admin.correo, NUEVA).status_code == 200  # entra directo, sin cambio forzado
 
 
@@ -49,7 +51,8 @@ def test_it_only_works_for_administrators(db):
         ejecutar(tecnico.correo)
 
     tecnico.refresh_from_db()
-    assert tecnico.check_password(DEFAULT_PASSWORD) and Evento.objects.count() == 0
+    assert tecnico.check_password(DEFAULT_PASSWORD)
+    assert Evento.objects.count() == 0
 
 
 def test_an_unknown_email_gives_the_same_error(db):
@@ -62,14 +65,16 @@ def test_mismatched_passwords_change_nothing(admin):
         ejecutar(admin.correo, claves=(NUEVA, "otra-clave-distinta-1"))
 
     admin.refresh_from_db()
-    assert admin.check_password(DEFAULT_PASSWORD) and Evento.objects.count() == 0
+    assert admin.check_password(DEFAULT_PASSWORD)
+    assert Evento.objects.count() == 0
 
 
 def test_the_new_password_goes_through_the_validators_without_being_echoed(admin, capsys):
     with pytest.raises(CommandError) as error:
         ejecutar(admin.correo, claves=("qwertyuiop", "qwertyuiop"))
 
-    assert "muy común" in str(error.value) and "qwertyuiop" not in str(error.value)
+    assert "muy común" in str(error.value)
+    assert "qwertyuiop" not in str(error.value)
     assert "qwertyuiop" not in capsys.readouterr().out
     admin.refresh_from_db()
     assert admin.check_password(DEFAULT_PASSWORD)
@@ -114,7 +119,8 @@ def test_the_password_never_reaches_events_or_logs(admin, caplog):
 
     admin.refresh_from_db()
     texto = str(list(Evento.objects.values())) + caplog.text
-    assert NUEVA not in texto and admin.password not in texto
+    assert NUEVA not in texto
+    assert admin.password not in texto
 
 
 def test_if_the_event_fails_the_password_is_not_changed(admin):
@@ -134,4 +140,5 @@ def test_it_works_for_the_only_admin_in_the_system(admin):
     ejecutar(admin.correo)
 
     admin.refresh_from_db()
-    assert admin.check_password(NUEVA) and admin.activo is True
+    assert admin.check_password(NUEVA)
+    assert admin.activo is True

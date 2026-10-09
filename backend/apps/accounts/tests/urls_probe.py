@@ -1,7 +1,7 @@
 """URLconf de pruebas: las rutas reales de auth más una vista de prueba por cada acción.
 
 Cada vista `probe/<accion>/` acepta GET, POST, PUT, PATCH y DELETE y exige únicamente su
-acción, para ejercitar la matriz rol × acción × método. `probe/sin-permisos/` no declara
+acción, para ejercitar la matriz rol x acción x método. `probe/sin-permisos/` no declara
 permisos a propósito: debe quedar denegada por defecto.
 """
 

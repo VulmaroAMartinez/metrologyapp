@@ -162,11 +162,15 @@ def test_if_the_change_fails_no_event_remains():
     usuario = UsuarioFactory(rol=Usuario.Rol.TECNICO)
     otro = UsuarioFactory(correo="ocupado@empresa.test")
 
-    with pytest.raises(IntegrityError), transaction.atomic():
-        registrar_evento(TipoEvento.USUARIO_ROL_CAMBIADO, usuario, "Rol cambiado")
-        usuario.rol = Usuario.Rol.ADMIN
-        usuario.correo = otro.correo  # viola la unicidad: el cambio falla después del evento
-        usuario.save()
+    def cambiar():
+        with transaction.atomic():
+            registrar_evento(TipoEvento.USUARIO_ROL_CAMBIADO, usuario, "Rol cambiado")
+            usuario.rol = Usuario.Rol.ADMIN
+            usuario.correo = otro.correo  # viola la unicidad: el cambio falla después del evento
+            usuario.save()
+
+    with pytest.raises(IntegrityError):
+        cambiar()
 
     usuario.refresh_from_db()
     assert Evento.objects.count() == 0
@@ -177,15 +181,19 @@ def test_if_the_change_fails_no_event_remains():
 def test_if_the_event_fails_the_change_is_reverted():
     usuario = UsuarioFactory(rol=Usuario.Rol.TECNICO)
 
-    with pytest.raises(DatosEventoInvalidosError), transaction.atomic():
-        usuario.rol = Usuario.Rol.ADMIN
-        usuario.save()
-        registrar_evento(
-            TipoEvento.USUARIO_ROL_CAMBIADO,
-            usuario,
-            "Rol cambiado",
-            despues={"password": "no-debe-entrar"},
-        )
+    def cambiar():
+        with transaction.atomic():
+            usuario.rol = Usuario.Rol.ADMIN
+            usuario.save()
+            registrar_evento(
+                TipoEvento.USUARIO_ROL_CAMBIADO,
+                usuario,
+                "Rol cambiado",
+                despues={"password": "no-debe-entrar"},
+            )
+
+    with pytest.raises(DatosEventoInvalidosError):
+        cambiar()
 
     usuario.refresh_from_db()
     assert usuario.rol == Usuario.Rol.TECNICO

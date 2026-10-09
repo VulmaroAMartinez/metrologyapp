@@ -101,8 +101,10 @@ def test_admin_reads_events_with_the_documented_shape(api_admin, admin):
     respuesta = pedir(api_admin)
 
     cuerpo = respuesta.json()
-    assert respuesta.status_code == 200 and respuesta["Cache-Control"] == "no-store"
-    assert set(cuerpo) == {"next", "results"} and cuerpo["next"] is None
+    assert respuesta.status_code == 200
+    assert respuesta["Cache-Control"] == "no-store"
+    assert set(cuerpo) == {"next", "results"}
+    assert cuerpo["next"] is None
     evento = cuerpo["results"][0]
     assert set(evento) == CAMPOS
     assert evento["usuario"] == {"id": admin.pk, "nombre": "Admin Uno"}
@@ -127,7 +129,8 @@ def test_the_endpoint_is_read_only(api_admin, metodo):
 
     respuesta = api_admin.call(metodo, URL, {"descripcion": "alterada"})
 
-    assert respuesta.status_code == 405 and respuesta.json()["codigo"] == "metodo_no_permitido"
+    assert respuesta.status_code == 405
+    assert respuesta.json()["codigo"] == "metodo_no_permitido"
     assert Evento.objects.filter(descripcion="alterada").count() == 0
 
 
@@ -139,7 +142,8 @@ def test_technicians_and_spectators_get_403(rol, metodo):
 
     respuesta = api.call(metodo, URL, {} if metodo != "GET" else None)
 
-    assert respuesta.status_code == 403 and respuesta.json()["codigo"] == "permiso_denegado"
+    assert respuesta.status_code == 403
+    assert respuesta.json()["codigo"] == "permiso_denegado"
 
 
 def test_anonymous_gets_401():
@@ -164,7 +168,8 @@ def test_order_is_newest_first_and_page_size_defaults_to_25(api_admin):
 
     cuerpo = pedir(api_admin).json()
 
-    assert len(cuerpo["results"]) == 25 and cuerpo["next"]
+    assert len(cuerpo["results"]) == 25
+    assert cuerpo["next"]
     marcas = [e["ocurrido_en"] for e in cuerpo["results"]]
     assert marcas == sorted(marcas, reverse=True)
 
@@ -245,7 +250,8 @@ def test_the_next_page_query_has_no_count_and_no_offset(api_admin):
 def test_malformed_cursors_are_400_never_500(api_admin, cursor):
     respuesta = pedir(api_admin, f"cursor={cursor}")
 
-    assert respuesta.status_code == 400 and respuesta.json()["codigo"] == "datos_invalidos"
+    assert respuesta.status_code == 400
+    assert respuesta.json()["codigo"] == "datos_invalidos"
 
 
 # --- filtros ---
@@ -472,7 +478,8 @@ def test_the_events_query_never_selects_password_hashes(api_admin, admin):
         q["sql"] for q in numero_de_consultas(api_admin, "") if 'FROM "audit_evento"' in q["sql"]
     )
 
-    assert "password" not in consulta.lower() and "intentos_fallidos" not in consulta
+    assert "password" not in consulta.lower()
+    assert "intentos_fallidos" not in consulta
 
 
 def test_antes_and_despues_never_show_keys_outside_the_whitelist(api_admin):
@@ -486,7 +493,8 @@ def test_antes_and_despues_never_show_keys_outside_the_whitelist(api_admin):
 
     evento = recorrer(api_admin)[0][0]
 
-    assert evento["antes"] == {"nombre": "A"} and evento["despues"] == {"correo": "a@e.test"}
+    assert evento["antes"] == {"nombre": "A"}
+    assert evento["despues"] == {"correo": "a@e.test"}
 
 
 @pytest.fixture

@@ -7,7 +7,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -16,21 +15,108 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='Evento',
+            name="Evento",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('ocurrido_en', models.DateTimeField(default=django.utils.timezone.now)),
-                ('instrumento_id', models.PositiveBigIntegerField(blank=True, null=True)),
-                ('tipo', models.CharField(choices=[('INSTRUMENTO_ALTA', 'Instrumento Alta'), ('INSTRUMENTO_EDITADO', 'Instrumento Editado'), ('INSTRUMENTO_CAMBIO_AREA', 'Instrumento Cambio Area'), ('INSTRUMENTO_CAMBIO_ESTADO', 'Instrumento Cambio Estado'), ('CALIBRACION_REGISTRADA', 'Calibracion Registrada'), ('CERTIFICADO_SUBIDO', 'Certificado Subido'), ('CERTIFICADO_ELIMINADO', 'Certificado Eliminado'), ('REEMPLAZO_INICIADO', 'Reemplazo Iniciado'), ('REEMPLAZO_TERMINADO', 'Reemplazo Terminado'), ('AVISO_CREADO', 'Aviso Creado'), ('AVISO_EDITADO', 'Aviso Editado'), ('AVISO_CANCELADO', 'Aviso Cancelado'), ('AVISO_ENVIADO', 'Aviso Enviado'), ('AVISO_FALLIDO', 'Aviso Fallido'), ('USUARIO_CREADO', 'Usuario Creado'), ('USUARIO_ROL_CAMBIADO', 'Usuario Rol Cambiado'), ('USUARIO_DESACTIVADO', 'Usuario Desactivado'), ('USUARIO_CONTRASENA_RESTABLECIDA', 'Usuario Contrasena Restablecida'), ('SESION_INICIADA', 'Sesion Iniciada'), ('SESION_FALLIDA', 'Sesion Fallida'), ('CATALOGO_MODIFICADO', 'Catalogo Modificado'), ('CONFIGURACION_CAMBIADA', 'Configuracion Cambiada'), ('PROCESO_DIARIO_EJECUTADO', 'Proceso Diario Ejecutado'), ('CUENTA_BLOQUEADA', 'Cuenta Bloqueada'), ('USUARIO_CONTRASENA_CAMBIADA', 'Usuario Contrasena Cambiada')], max_length=40)),
-                ('descripcion', models.TextField()),
-                ('antes', models.JSONField(blank=True, null=True)),
-                ('despues', models.JSONField(blank=True, null=True)),
-                ('ip', models.GenericIPAddressField(blank=True, null=True)),
-                ('usuario', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='+', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True, primary_key=True, serialize=False, verbose_name="ID"
+                    ),
+                ),
+                ("ocurrido_en", models.DateTimeField(default=django.utils.timezone.now)),
+                ("instrumento_id", models.PositiveBigIntegerField(blank=True, null=True)),
+                (
+                    "tipo",
+                    models.CharField(
+                        choices=[
+                            ("INSTRUMENTO_ALTA", "Instrumento Alta"),
+                            ("INSTRUMENTO_EDITADO", "Instrumento Editado"),
+                            ("INSTRUMENTO_CAMBIO_AREA", "Instrumento Cambio Area"),
+                            ("INSTRUMENTO_CAMBIO_ESTADO", "Instrumento Cambio Estado"),
+                            ("CALIBRACION_REGISTRADA", "Calibracion Registrada"),
+                            ("CERTIFICADO_SUBIDO", "Certificado Subido"),
+                            ("CERTIFICADO_ELIMINADO", "Certificado Eliminado"),
+                            ("REEMPLAZO_INICIADO", "Reemplazo Iniciado"),
+                            ("REEMPLAZO_TERMINADO", "Reemplazo Terminado"),
+                            ("AVISO_CREADO", "Aviso Creado"),
+                            ("AVISO_EDITADO", "Aviso Editado"),
+                            ("AVISO_CANCELADO", "Aviso Cancelado"),
+                            ("AVISO_ENVIADO", "Aviso Enviado"),
+                            ("AVISO_FALLIDO", "Aviso Fallido"),
+                            ("USUARIO_CREADO", "Usuario Creado"),
+                            ("USUARIO_ROL_CAMBIADO", "Usuario Rol Cambiado"),
+                            ("USUARIO_DESACTIVADO", "Usuario Desactivado"),
+                            ("USUARIO_CONTRASENA_RESTABLECIDA", "Usuario Contrasena Restablecida"),
+                            ("SESION_INICIADA", "Sesion Iniciada"),
+                            ("SESION_FALLIDA", "Sesion Fallida"),
+                            ("CATALOGO_MODIFICADO", "Catalogo Modificado"),
+                            ("CONFIGURACION_CAMBIADA", "Configuracion Cambiada"),
+                            ("PROCESO_DIARIO_EJECUTADO", "Proceso Diario Ejecutado"),
+                            ("CUENTA_BLOQUEADA", "Cuenta Bloqueada"),
+                            ("USUARIO_CONTRASENA_CAMBIADA", "Usuario Contrasena Cambiada"),
+                        ],
+                        max_length=40,
+                    ),
+                ),
+                ("descripcion", models.TextField()),
+                ("antes", models.JSONField(blank=True, null=True)),
+                ("despues", models.JSONField(blank=True, null=True)),
+                ("ip", models.GenericIPAddressField(blank=True, null=True)),
+                (
+                    "usuario",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="+",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'indexes': [models.Index(fields=['ocurrido_en'], name='evento_ocurrido_en_idx'), models.Index(fields=['usuario'], name='evento_usuario_idx'), models.Index(fields=['tipo'], name='evento_tipo_idx'), models.Index(fields=['instrumento_id'], name='evento_instrumento_idx')],
-                'constraints': [models.CheckConstraint(condition=models.Q(('tipo__in', ['INSTRUMENTO_ALTA', 'INSTRUMENTO_EDITADO', 'INSTRUMENTO_CAMBIO_AREA', 'INSTRUMENTO_CAMBIO_ESTADO', 'CALIBRACION_REGISTRADA', 'CERTIFICADO_SUBIDO', 'CERTIFICADO_ELIMINADO', 'REEMPLAZO_INICIADO', 'REEMPLAZO_TERMINADO', 'AVISO_CREADO', 'AVISO_EDITADO', 'AVISO_CANCELADO', 'AVISO_ENVIADO', 'AVISO_FALLIDO', 'USUARIO_CREADO', 'USUARIO_ROL_CAMBIADO', 'USUARIO_DESACTIVADO', 'USUARIO_CONTRASENA_RESTABLECIDA', 'SESION_INICIADA', 'SESION_FALLIDA', 'CATALOGO_MODIFICADO', 'CONFIGURACION_CAMBIADA', 'PROCESO_DIARIO_EJECUTADO', 'CUENTA_BLOQUEADA', 'USUARIO_CONTRASENA_CAMBIADA'])), name='evento_tipo_valido')],
+                "indexes": [
+                    models.Index(fields=["ocurrido_en"], name="evento_ocurrido_en_idx"),
+                    models.Index(fields=["usuario"], name="evento_usuario_idx"),
+                    models.Index(fields=["tipo"], name="evento_tipo_idx"),
+                    models.Index(fields=["instrumento_id"], name="evento_instrumento_idx"),
+                ],
+                "constraints": [
+                    models.CheckConstraint(
+                        condition=models.Q(
+                            (
+                                "tipo__in",
+                                [
+                                    "INSTRUMENTO_ALTA",
+                                    "INSTRUMENTO_EDITADO",
+                                    "INSTRUMENTO_CAMBIO_AREA",
+                                    "INSTRUMENTO_CAMBIO_ESTADO",
+                                    "CALIBRACION_REGISTRADA",
+                                    "CERTIFICADO_SUBIDO",
+                                    "CERTIFICADO_ELIMINADO",
+                                    "REEMPLAZO_INICIADO",
+                                    "REEMPLAZO_TERMINADO",
+                                    "AVISO_CREADO",
+                                    "AVISO_EDITADO",
+                                    "AVISO_CANCELADO",
+                                    "AVISO_ENVIADO",
+                                    "AVISO_FALLIDO",
+                                    "USUARIO_CREADO",
+                                    "USUARIO_ROL_CAMBIADO",
+                                    "USUARIO_DESACTIVADO",
+                                    "USUARIO_CONTRASENA_RESTABLECIDA",
+                                    "SESION_INICIADA",
+                                    "SESION_FALLIDA",
+                                    "CATALOGO_MODIFICADO",
+                                    "CONFIGURACION_CAMBIADA",
+                                    "PROCESO_DIARIO_EJECUTADO",
+                                    "CUENTA_BLOQUEADA",
+                                    "USUARIO_CONTRASENA_CAMBIADA",
+                                ],
+                            )
+                        ),
+                        name="evento_tipo_valido",
+                    )
+                ],
             },
         ),
         # Solo inserción también en la base de datos: los privilegios por defecto (init.sql) le

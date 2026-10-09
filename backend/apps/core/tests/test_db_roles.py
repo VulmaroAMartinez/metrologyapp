@@ -41,7 +41,7 @@ def app(roles_db):
 def table(migrator):
     """Tabla creada por migrator DESPUÉS de init.sql: solo los privilegios por defecto la cubren."""
     name = f"roles_probe_{uuid.uuid4().hex[:8]}"
-    migrator.execute(f"CREATE TABLE {name} (id bigint GENERATED ALWAYS AS IDENTITY, v text)")  # noqa: S608
+    migrator.execute(f"CREATE TABLE {name} (id bigint GENERATED ALWAYS AS IDENTITY, v text)")
     yield name
     migrator.execute(f"DROP TABLE IF EXISTS {name}")
 

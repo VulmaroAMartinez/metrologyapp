@@ -37,7 +37,8 @@ secrets: ## Escaneo de secretos: historial git y archivos del directorio de trab
 
 # test, lint y ci se completan con cada tarea del sprint (backend, frontend, auditorías).
 test: ## Pruebas (backend con pytest; frontend se suma después)
-	$(COMPOSE) --profile tools run --rm --build test
+	$(COMPOSE) --profile tools run --rm --build test \
+		pytest --cov=apps --cov=config --cov-report=term-missing --cov-fail-under=95
 
 audit: ## Auditoría de dependencias (pip-audit) contra los archivos con hashes; falla si hay vulnerabilidades
 	docker compose -f deploy/docker-compose.yml --env-file .env.example --profile tools run --rm --build --no-deps -e HOME=//tmp -e XDG_CACHE_HOME=//tmp test sh -c "pip-audit -r requirements.txt --require-hashes --disable-pip && pip-audit -r requirements-dev.txt --require-hashes --disable-pip"

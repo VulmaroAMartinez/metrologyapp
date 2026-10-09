@@ -32,12 +32,15 @@ def crear_usuario(admin, rol, contrasena):
 
 def test_the_admin_creates_a_technician_who_cannot_change_their_password(admin):
     correo, creado = crear_usuario(admin, "TECNICO", CLAVE_TECNICO)
-    assert CLAVE_TECNICO not in json.dumps(creado) and "contrasena" not in creado  # no se devuelve
-    assert "contrasena_temporal" not in creado and "debe_cambiar_contrasena" not in creado
+    assert CLAVE_TECNICO not in json.dumps(creado)
+    assert "contrasena" not in creado
+    assert "contrasena_temporal" not in creado
+    assert "debe_cambiar_contrasena" not in creado
 
     tecnico = Cliente()
     estado, _, perfil = tecnico.iniciar_sesion(correo, CLAVE_TECNICO)  # entra directo
-    assert estado == 200 and perfil["rol"] == "TECNICO"
+    assert estado == 200
+    assert perfil["rol"] == "TECNICO"
     assert tecnico.pedir("GET", "/api/v1/auth/me/")[0] == 200
 
     # No puede cambiar su contraseña por ninguna vía de la API: 403 permiso_denegado.
@@ -65,13 +68,16 @@ def test_admin_a_resets_admin_b_and_b_logs_in_with_the_new_password(admin):
         {"contrasena": CLAVE_NUEVA},
     )
 
-    assert estado == 200 and cabeceras["cache-control"] == "no-store"
-    assert CLAVE_NUEVA not in json.dumps(cuerpo) and "contrasena" not in cuerpo
+    assert estado == 200
+    assert cabeceras["cache-control"] == "no-store"
+    assert CLAVE_NUEVA not in json.dumps(cuerpo)
+    assert "contrasena" not in cuerpo
     assert admin_b.pedir("GET", "/api/v1/auth/me/")[0] == 401  # su sesión se cerró
     assert Cliente().iniciar_sesion(correo_b, CLAVE_B)[0] == 401  # la anterior ya no sirve
     nueva_sesion = Cliente()
     estado, _, perfil = nueva_sesion.iniciar_sesion(correo_b, CLAVE_NUEVA)
-    assert estado == 200 and perfil["rol"] == "ADMIN"
+    assert estado == 200
+    assert perfil["rol"] == "ADMIN"
     assert nueva_sesion.pedir("GET", "/api/v1/usuarios/")[0] == 200
 
 

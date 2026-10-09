@@ -97,7 +97,8 @@ def test_using_the_environment_variable_warns_to_delete_it(monkeypatch, capsys):
     ejecutar("--correo", "raiz@empresa.test", "--nombre", "Raíz")
 
     avisos = capsys.readouterr().err
-    assert VARIABLE_CONTRASENA in avisos and "Bórrala" in avisos
+    assert VARIABLE_CONTRASENA in avisos
+    assert "Bórrala" in avisos
     assert CLAVE not in avisos
 
 
@@ -108,7 +109,8 @@ def test_the_interactive_path_prints_no_warning_and_no_password(monkeypatch, cap
         ejecutar("--correo", "raiz@empresa.test", "--nombre", "Raíz")
 
     salida = capsys.readouterr()
-    assert salida.err == "" and CLAVE not in salida.out
+    assert salida.err == ""
+    assert CLAVE not in salida.out
 
 
 def test_the_created_admin_logs_in_straight_away_without_a_forced_change(monkeypatch):
@@ -119,4 +121,5 @@ def test_the_created_admin_logs_in_straight_away_without_a_forced_change(monkeyp
 
     respuesta = Api().login("raiz@empresa.test", CLAVE)
 
-    assert respuesta.status_code == 200 and respuesta.json()["rol"] == "ADMIN"
+    assert respuesta.status_code == 200
+    assert respuesta.json()["rol"] == "ADMIN"

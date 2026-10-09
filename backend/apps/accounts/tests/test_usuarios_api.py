@@ -106,8 +106,10 @@ def test_list_shape_and_default_page_size(api_admin):
     cuerpo = respuesta.json()
     assert respuesta.status_code == 200
     assert set(cuerpo) == {"count", "next", "previous", "results"}
-    assert cuerpo["count"] == 31 and len(cuerpo["results"]) == 25
-    assert cuerpo["next"] and cuerpo["previous"] is None
+    assert cuerpo["count"] == 31
+    assert len(cuerpo["results"]) == 25
+    assert cuerpo["next"]
+    assert cuerpo["previous"] is None
     assert all(set(fila) == CAMPOS for fila in cuerpo["results"])
 
 
@@ -118,7 +120,8 @@ def test_pagination_walks_through_every_user_exactly_once(api_admin):
     for pagina in (1, 2):
         ids += [u["id"] for u in api_admin.get(f"{BASE}?pagina={pagina}").json()["results"]]
 
-    assert len(ids) == 31 and len(set(ids)) == 31
+    assert len(ids) == 31
+    assert len(set(ids)) == 31
 
 
 def test_page_size_is_configurable_and_capped_at_100(api_admin):
@@ -215,16 +218,20 @@ def test_detail_shows_the_public_fields_and_read_only_lock_date(api_admin):
     respuesta = api_admin.get(ruta(objetivo.pk))
 
     cuerpo = respuesta.json()
-    assert respuesta.status_code == 200 and set(cuerpo) == CAMPOS
-    assert cuerpo["bloqueado_hasta"] is not None and cuerpo["numero_nomina"] == "X1"
-    assert "intentos_fallidos" not in cuerpo and "password" not in cuerpo
+    assert respuesta.status_code == 200
+    assert set(cuerpo) == CAMPOS
+    assert cuerpo["bloqueado_hasta"] is not None
+    assert cuerpo["numero_nomina"] == "X1"
+    assert "intentos_fallidos" not in cuerpo
+    assert "password" not in cuerpo
     assert respuesta["Cache-Control"] == "no-store"
 
 
 def test_detail_of_an_unknown_user_is_404(api_admin):
     respuesta = api_admin.get(ruta(987654))
 
-    assert respuesta.status_code == 404 and respuesta.json()["codigo"] == "no_encontrado"
+    assert respuesta.status_code == 404
+    assert respuesta.json()["codigo"] == "no_encontrado"
 
 
 # --- crear ---
@@ -247,7 +254,8 @@ def test_create_stores_the_password_the_admin_wrote_and_never_returns_it(api_adm
     assert respuesta.status_code == 201
     assert respuesta["Cache-Control"] == "no-store"
     assert set(cuerpo) == CAMPOS  # ningún campo de contraseña, ni temporal ni de otro tipo
-    assert cuerpo["activo"] is True and cuerpo["numero_nomina"] == "N-7"
+    assert cuerpo["activo"] is True
+    assert cuerpo["numero_nomina"] == "N-7"
     assert cuerpo["bloqueado_hasta"] is None
     assert CLAVE not in respuesta.content.decode()
     for texto in (api_admin.get(ruta(cuerpo["id"])).content, api_admin.get(BASE).content):
@@ -269,7 +277,8 @@ def test_the_created_user_logs_in_straight_away_with_the_password_the_admin_wrot
 def test_create_rejects_fields_that_are_not_part_of_the_form(api_admin, campo):
     respuesta = api_admin.post(BASE, nuevo(**{campo: "x"}))
 
-    assert respuesta.status_code == 400 and respuesta.json()["codigo"] == "datos_invalidos"
+    assert respuesta.status_code == 400
+    assert respuesta.json()["codigo"] == "datos_invalidos"
     assert Usuario.objects.count() == 1
 
 
@@ -279,7 +288,8 @@ def test_create_requires_the_password(api_admin):
 
     respuesta = api_admin.post(BASE, cuerpo)
 
-    assert respuesta.status_code == 400 and "contrasena" in respuesta.json()["detalle"]
+    assert respuesta.status_code == 400
+    assert "contrasena" in respuesta.json()["detalle"]
 
 
 @pytest.mark.parametrize(
@@ -294,7 +304,8 @@ def test_create_requires_the_password(api_admin):
 def test_create_runs_the_password_through_the_validators(api_admin, contrasena, fragmento):
     respuesta = api_admin.post(BASE, nuevo(contrasena=contrasena))
 
-    assert respuesta.status_code == 400 and respuesta.json()["codigo"] == "datos_invalidos"
+    assert respuesta.status_code == 400
+    assert respuesta.json()["codigo"] == "datos_invalidos"
     assert fragmento in respuesta.json()["detalle"]
     assert contrasena not in respuesta.content.decode()  # el mensaje no repite la contraseña
     assert Usuario.objects.count() == 1
@@ -310,7 +321,8 @@ def test_an_overlong_password_is_rejected_before_reaching_the_hasher(api_admin):
 def test_blank_nomina_is_stored_as_null_and_the_name_is_trimmed(api_admin):
     cuerpo = api_admin.post(BASE, nuevo(nombre="  Luis  ", numero_nomina="   ")).json()
 
-    assert cuerpo["numero_nomina"] is None and cuerpo["nombre"] == "Luis"
+    assert cuerpo["numero_nomina"] is None
+    assert cuerpo["nombre"] == "Luis"
 
 
 @pytest.mark.parametrize(
@@ -409,7 +421,8 @@ def test_edit_rejects_fields_that_have_their_own_endpoint_or_are_read_only(api_a
 
     respuesta = api_admin.call("PATCH", ruta(objetivo.pk), {campo: "x"})
 
-    assert respuesta.status_code == 400 and respuesta.json()["codigo"] == "datos_invalidos"
+    assert respuesta.status_code == 400
+    assert respuesta.json()["codigo"] == "datos_invalidos"
 
 
 def test_edit_duplicates_and_unknown_user(api_admin):
@@ -441,7 +454,8 @@ def test_change_role(api_admin):
 
     respuesta = api_admin.post(ruta(objetivo.pk, "cambiar-rol"), {"rol": "ESPECTADOR"})
 
-    assert respuesta.status_code == 200 and respuesta.json()["rol"] == "ESPECTADOR"
+    assert respuesta.status_code == 200
+    assert respuesta.json()["rol"] == "ESPECTADOR"
     assert (
         api_admin.post(ruta(objetivo.pk, "cambiar-rol"), {"rol": "SUPERADMIN"}).status_code == 400
     )
@@ -459,8 +473,10 @@ def test_an_admin_cannot_change_their_role_deactivate_or_reset_themselves(api_ad
         assert respuesta.status_code == 403
         assert respuesta.json()["codigo"] == "auto_modificacion_no_permitida"
     admin.refresh_from_db()
-    assert admin.rol == ADMIN and admin.activo is True
-    assert admin.password == clave_antes and admin.check_password(DEFAULT_PASSWORD)
+    assert admin.rol == ADMIN
+    assert admin.activo is True
+    assert admin.password == clave_antes
+    assert admin.check_password(DEFAULT_PASSWORD)
     assert api_admin.get(ME).status_code == 200  # su sesión sigue intacta
     assert Evento.objects.filter(tipo__startswith="USUARIO_").count() == 0
 
@@ -472,7 +488,8 @@ def test_deactivate_and_reactivate(api_admin):
     assert Api().login(objetivo.correo).status_code == 401  # inactivo no entra
     reactivado = api_admin.post(ruta(objetivo.pk, "reactivar")).json()
 
-    assert desactivado["activo"] is False and reactivado["activo"] is True
+    assert desactivado["activo"] is False
+    assert reactivado["activo"] is True
     assert Api().login(objetivo.correo).status_code == 200
     assert Usuario.objects.filter(pk=objetivo.pk).exists()  # nunca hay borrado físico
 
@@ -498,8 +515,10 @@ def test_reset_sets_the_password_the_admin_wrote_and_returns_no_password(api_adm
 
     respuesta = reset(api_admin, objetivo.pk)
 
-    assert respuesta.status_code == 200 and respuesta["Cache-Control"] == "no-store"
-    assert set(respuesta.json()) == CAMPOS and CLAVE_2 not in respuesta.content.decode()
+    assert respuesta.status_code == 200
+    assert respuesta["Cache-Control"] == "no-store"
+    assert set(respuesta.json()) == CAMPOS
+    assert CLAVE_2 not in respuesta.content.decode()
     assert Api().login(objetivo.correo, DEFAULT_PASSWORD).status_code == 401
     assert Api().login(objetivo.correo, CLAVE_2).status_code == 200  # entra sin cambio forzado
 
@@ -512,7 +531,8 @@ def test_reset_requires_the_password_and_runs_the_validators(api_admin):
     similar = reset(api_admin, objetivo.pk, "b@empresa.test1")
 
     assert sin_clave.status_code == 400
-    assert debil.status_code == 400 and "muy común" in debil.json()["detalle"]
+    assert debil.status_code == 400
+    assert "muy común" in debil.json()["detalle"]
     assert similar.status_code == 400
     assert "qwertyuiop" not in debil.content.decode()
     assert Api().login(objetivo.correo, DEFAULT_PASSWORD).status_code == 200  # no cambió
@@ -529,6 +549,13 @@ def test_reset_rejects_unknown_fields_and_unknown_users(api_admin):
     assert reset(api_admin, 987654).status_code == 404
 
 
+def test_a_body_that_is_not_an_object_is_rejected_with_400(api_admin):
+    respuesta = api_admin.post(BASE, ["nombre", "correo"])
+
+    assert respuesta.status_code == 400
+    assert Usuario.objects.count() == 1  # solo el administrador de la sesión
+
+
 def test_an_admin_resets_the_other_admins_password_without_reauthentication(api_admin):
     otro = UsuarioFactory(correo="admin2@empresa.test", rol=ADMIN)
     sesion_otro = sesion(otro)
@@ -539,10 +566,8 @@ def test_an_admin_resets_the_other_admins_password_without_reauthentication(api_
     assert sesion_otro.get(ME).status_code == 401  # sus sesiones se cerraron
     assert Api().login(otro.correo, CLAVE_2).status_code == 200
     evento = Evento.objects.get(tipo="USUARIO_CONTRASENA_RESTABLECIDA")
-    assert (
-        evento.usuario.correo == "admin@empresa.test"
-        and "admin2@empresa.test" in evento.descripcion
-    )
+    assert evento.usuario.correo == "admin@empresa.test"
+    assert "admin2@empresa.test" in evento.descripcion
 
 
 def test_reset_does_not_unlock_a_locked_account(api_admin, clock):
@@ -575,7 +600,8 @@ def test_after_a_role_change_the_open_session_has_the_new_permissions_on_the_nex
     api_admin.post(ruta(otro_admin.pk, "cambiar-rol"), {"rol": "ESPECTADOR"})
 
     denegada = sesion_otro.get(BASE)
-    assert denegada.status_code == 403 and denegada.json()["codigo"] == "permiso_denegado"
+    assert denegada.status_code == 403
+    assert denegada.json()["codigo"] == "permiso_denegado"
     assert sesion_otro.get(ME).json()["rol"] == "ESPECTADOR"  # la sesión sigue; el rol cambió
 
     api_admin.post(ruta(otro_admin.pk, "cambiar-rol"), {"rol": "ADMIN"})
@@ -591,7 +617,8 @@ def test_deactivating_closes_the_open_sessions_immediately(api_admin):
 
     for abierta in (uno, dos):
         respuesta = abierta.get(ME)
-        assert respuesta.status_code == 401 and respuesta.json()["codigo"] == "no_autenticado"
+        assert respuesta.status_code == 401
+        assert respuesta.json()["codigo"] == "no_autenticado"
     assert not Session.objects.filter(session_key__in=[uno.session_cookie, dos.session_cookie])
 
 
@@ -601,7 +628,8 @@ def test_resetting_closes_the_open_sessions_immediately(api_admin):
 
     reset(api_admin, objetivo.pk)
 
-    assert uno.get(ME).status_code == 401 and dos.get(ME).status_code == 401
+    assert uno.get(ME).status_code == 401
+    assert dos.get(ME).status_code == 401
     assert not Session.objects.filter(session_key__in=[uno.session_cookie, dos.session_cookie])
 
 
@@ -614,13 +642,15 @@ def test_full_flow_the_admin_assigns_passwords_and_the_technician_cannot_change_
 
     tecnico = Api()
     entrada = tecnico.login("tecnico@empresa.test", CLAVE)  # entra directo: no hay cambio forzado
-    assert entrada.status_code == 200 and entrada.json()["rol"] == "TECNICO"
+    assert entrada.status_code == 200
+    assert entrada.json()["rol"] == "TECNICO"
     assert tecnico.get(ME).status_code == 200
     assert tecnico.get(BASE).json()["codigo"] == "permiso_denegado"  # no administra
 
     # No puede cambiar su contraseña por ninguna vía de la API.
     cambio = tecnico.post(CAMBIAR, {"contrasena_actual": CLAVE, "contrasena_nueva": CLAVE_2})
-    assert cambio.status_code == 403 and cambio.json()["codigo"] == "permiso_denegado"
+    assert cambio.status_code == 403
+    assert cambio.json()["codigo"] == "permiso_denegado"
     assert Api().login("tecnico@empresa.test", CLAVE).status_code == 200  # nada cambió
 
     # Solo el administrador la cambia, y la sesión del técnico se cierra.
@@ -708,7 +738,8 @@ def test_no_response_ever_contains_a_password_hash(real_hasher, admin):
 
     assert len(cuerpos) == 14
     for cuerpo in cuerpos:
-        assert CLAVE not in cuerpo and CLAVE_2 not in cuerpo  # tampoco las que escribió el admin
+        assert CLAVE not in cuerpo
+        assert CLAVE_2 not in cuerpo
         for valor in valores(json.loads(cuerpo)):
             assert not (isinstance(valor, str) and "argon2$" in valor), cuerpo
             assert valor not in {"password", "intentos_fallidos", "last_login"}, cuerpo
@@ -758,7 +789,8 @@ def test_a_failure_in_the_middle_never_leaks_the_password_to_the_client_or_the_l
         crear_fallido = api.post(BASE, nuevo(correo="otro@empresa.test"))
         reset_fallido = reset(api, objetivo.pk)
 
-    assert crear_fallido.status_code == 500 and reset_fallido.status_code == 500
+    assert crear_fallido.status_code == 500
+    assert reset_fallido.status_code == 500
     for secreto in (CLAVE, CLAVE_2):
         assert secreto not in crear_fallido.content.decode() + reset_fallido.content.decode()
         assert secreto not in caplog.text

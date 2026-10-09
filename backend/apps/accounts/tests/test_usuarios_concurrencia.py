@@ -75,7 +75,8 @@ def test_two_admins_cannot_demote_each_other_at_the_same_time(evento_lento):
     estados = sorted(estado for estado, _ in resultados)
     assert estados == ["error", "ok"], resultados
     fallo = next(valor for estado, valor in resultados if estado == "error")
-    assert isinstance(fallo, services.ActorNoVigente) and fallo.estado == 403
+    assert isinstance(fallo, services.ActorNoVigente)
+    assert fallo.estado == 403
     assert administradores_activos() == 1  # nunca 0
 
 
@@ -138,7 +139,8 @@ def test_simultaneous_submissions_of_the_same_form_create_one_user_and_one_clean
 
     assert sorted(estado for estado, _ in resultados) == ["error", "ok"], resultados
     fallo = next(valor for estado, valor in resultados if estado == "error")
-    assert isinstance(fallo, services.CorreoDuplicado) and fallo.estado == 400
+    assert isinstance(fallo, services.CorreoDuplicado)
+    assert fallo.estado == 400
     assert Usuario.objects.filter(correo="luis@empresa.test").count() == 1
 
 

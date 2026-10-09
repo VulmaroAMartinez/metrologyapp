@@ -23,12 +23,22 @@ PROD_ENV = {
     "DB_PASSWORD": "una-clave-real",
     "TRUSTED_PROXY_CIDRS": "172.28.0.0/24",
 }
-COOKIE_SETTINGS = (
-    "SESSION_COOKIE_NAME SESSION_COOKIE_SECURE SESSION_COOKIE_HTTPONLY SESSION_COOKIE_SAMESITE "
-    "SESSION_COOKIE_PATH SESSION_COOKIE_DOMAIN CSRF_COOKIE_NAME CSRF_COOKIE_SECURE "
-    "CSRF_COOKIE_HTTPONLY CSRF_COOKIE_SAMESITE CSRF_COOKIE_PATH CSRF_COOKIE_DOMAIN "
-    "SESSION_COOKIE_AGE SESSION_SAVE_EVERY_REQUEST"
-).split()
+COOKIE_SETTINGS = [
+    "SESSION_COOKIE_NAME",
+    "SESSION_COOKIE_SECURE",
+    "SESSION_COOKIE_HTTPONLY",
+    "SESSION_COOKIE_SAMESITE",
+    "SESSION_COOKIE_PATH",
+    "SESSION_COOKIE_DOMAIN",
+    "CSRF_COOKIE_NAME",
+    "CSRF_COOKIE_SECURE",
+    "CSRF_COOKIE_HTTPONLY",
+    "CSRF_COOKIE_SAMESITE",
+    "CSRF_COOKIE_PATH",
+    "CSRF_COOKIE_DOMAIN",
+    "SESSION_COOKIE_AGE",
+    "SESSION_SAVE_EVERY_REQUEST",
+]
 
 
 def prod_settings() -> dict:
@@ -166,7 +176,9 @@ def test_session_key_is_rotated_on_login(api, usuario):
     api.login(usuario.correo)
 
     despues = api.session_cookie
-    assert antes and despues and antes != despues
+    assert antes
+    assert despues
+    assert antes != despues
     assert not Session.objects.filter(session_key=antes).exists()  # la vieja ya no sirve
 
 

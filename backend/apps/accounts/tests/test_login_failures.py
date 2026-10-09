@@ -202,9 +202,11 @@ def test_parallel_guesses_cannot_exceed_the_lock_threshold_and_never_skip_the_ha
         finally:
             connection.close()
 
-    with mock.patch.object(services, "check_password", side_effect=lenta):
-        with ThreadPoolExecutor(max_workers=12) as pool:
-            motivos = list(pool.map(intento, range(12)))
+    with (
+        mock.patch.object(services, "check_password", side_effect=lenta),
+        ThreadPoolExecutor(max_workers=12) as pool,
+    ):
+        motivos = list(pool.map(intento, range(12)))
 
     usuario.refresh_from_db()
     contra_real = [e for e in llamadas if e == usuario.password]

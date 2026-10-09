@@ -88,7 +88,8 @@ def test_create_normalizes_fields_and_stores_the_password_the_admin_wrote(ana):
         "luis.perez@empresa.test",
         "A-77",
     )
-    assert usuario.activo is True and usuario.check_password(CLAVE)
+    assert usuario.activo is True
+    assert usuario.check_password(CLAVE)
     assert (usuario.intentos_fallidos, usuario.bloqueado_hasta) == (0, None)
 
 
@@ -118,7 +119,8 @@ def test_create_rejects_invalid_data(ana, campos, fragmento):
         crear(ana, **campos)
 
     assert fragmento in error.value.detalle.lower()
-    assert Usuario.objects.count() == 1 and Evento.objects.count() == 0
+    assert Usuario.objects.count() == 1
+    assert Evento.objects.count() == 0
 
 
 def test_name_at_the_maximum_length_is_accepted(ana):
@@ -142,8 +144,10 @@ def test_create_runs_the_password_validators_without_echoing_it(ana, contrasena,
         crear(ana, contrasena=contrasena)
 
     assert fragmento in error.value.detalle
-    assert contrasena not in error.value.detalle and contrasena not in str(error.value)
-    assert Usuario.objects.count() == 1 and Evento.objects.count() == 0
+    assert contrasena not in error.value.detalle
+    assert contrasena not in str(error.value)
+    assert Usuario.objects.count() == 1
+    assert Evento.objects.count() == 0
 
 
 @pytest.mark.parametrize(
@@ -156,7 +160,8 @@ def test_reset_runs_the_password_validators_without_echoing_it(ana, carla, contr
     with pytest.raises(services.DatosDeUsuarioInvalidos) as error:
         services.restablecer_contrasena(ana.pk, carla.pk, contrasena)
 
-    assert fragmento in error.value.detalle and contrasena not in error.value.detalle
+    assert fragmento in error.value.detalle
+    assert contrasena not in error.value.detalle
     assert instantanea() == antes
 
 
@@ -194,7 +199,8 @@ def test_duplicate_email_ignores_case_and_spaces(ana, variante):
     with pytest.raises(services.CorreoDuplicado) as error:
         crear(ana, correo=variante)
 
-    assert error.value.codigo == "correo_duplicado" and error.value.estado == 400
+    assert error.value.codigo == "correo_duplicado"
+    assert error.value.estado == 400
 
 
 @pytest.mark.parametrize("variante", ["ab-12", "AB-12", "  ab-12 ", "Ab-12"])
@@ -204,7 +210,8 @@ def test_duplicate_nomina_ignores_case_and_spaces(ana, variante):
     with pytest.raises(services.NominaDuplicada) as error:
         crear(ana, correo="dos@empresa.test", numero_nomina=variante)
 
-    assert error.value.codigo == "numero_nomina_duplicado" and error.value.estado == 400
+    assert error.value.codigo == "numero_nomina_duplicado"
+    assert error.value.estado == 400
 
 
 def test_the_unique_index_is_the_last_line_of_defense_for_simultaneous_submissions(ana):
@@ -397,7 +404,8 @@ def test_an_admin_cannot_deactivate_change_role_or_reset_their_own_password(ana,
         assert error.value.estado == 403
 
     ana.refresh_from_db()
-    assert ana.activo is True and ana.rol == ADMIN
+    assert ana.activo is True
+    assert ana.rol == ADMIN
     assert ana.password == clave_antes
     assert Evento.objects.count() == 0
 
@@ -415,7 +423,8 @@ def test_an_admin_can_reset_the_other_admins_password(ana, beto):
     services.restablecer_contrasena(ana.pk, beto.pk, CLAVE_2)
 
     beto.refresh_from_db()
-    assert beto.check_password(CLAVE_2) and not beto.check_password(DEFAULT_PASSWORD)
+    assert beto.check_password(CLAVE_2)
+    assert not beto.check_password(DEFAULT_PASSWORD)
     assert not Session.objects.exists()  # sus sesiones se cerraron
 
 
@@ -432,7 +441,8 @@ def test_an_admin_can_demote_and_deactivate_another_admin(ana, beto):
 def test_the_last_active_admin_invariant(ana, beto):
     with pytest.raises(services.UltimoAdministrador) as error:
         services._garantizar_administrador_restante([ana], ana.pk)
-    assert error.value.codigo == "ultimo_administrador" and error.value.estado == 409
+    assert error.value.codigo == "ultimo_administrador"
+    assert error.value.estado == 409
 
     services._garantizar_administrador_restante([ana, beto], ana.pk)  # queda beto
 
@@ -452,7 +462,8 @@ def test_an_actor_who_is_no_longer_an_active_admin_is_refused(operacion, motivo,
     with pytest.raises(services.ActorNoVigente) as error:
         OPERACIONES[operacion](actor, carla)
 
-    assert error.value.estado == 403 and error.value.codigo == "permiso_denegado"
+    assert error.value.estado == 403
+    assert error.value.codigo == "permiso_denegado"
     assert instantanea() == antes
 
 
@@ -477,10 +488,10 @@ def test_the_system_can_reset_an_admin_without_an_actor(ana):
     ana.refresh_from_db()
     assert ana.check_password(CLAVE_2)
     evento = Evento.objects.get()
-    assert evento.tipo == "USUARIO_CONTRASENA_RESTABLECIDA" and evento.usuario is None
-    assert (
-        "por comando de servidor" in evento.descripcion and "ana@empresa.test" in evento.descripcion
-    )
+    assert evento.tipo == "USUARIO_CONTRASENA_RESTABLECIDA"
+    assert evento.usuario is None
+    assert "por comando de servidor" in evento.descripcion
+    assert "ana@empresa.test" in evento.descripcion
 
 
 def test_the_system_reset_refuses_non_admins(carla):
@@ -498,7 +509,8 @@ def test_the_system_reset_works_even_for_the_only_admin_and_does_not_reactivate(
     services.restablecer_contrasena(None, ana.pk, CLAVE_2, solo_rol=ADMIN)
 
     ana.refresh_from_db()
-    assert ana.check_password(CLAVE_2) and ana.activo is False
+    assert ana.check_password(CLAVE_2)
+    assert ana.activo is False
 
 
 # --- restablecer / reactivar / desactivar no son un desbloqueo ---
@@ -612,7 +624,8 @@ def test_no_password_or_hash_reaches_events_or_logs(ana, carla, caplog):
     texto = volcado_eventos() + caplog.text
     for secreto in (CLAVE, CLAVE_2, usuario.password, carla.password, DEFAULT_PASSWORD):
         assert secreto not in texto
-    assert "argon2" not in texto and "md5$" not in texto
+    assert "argon2" not in texto
+    assert "md5$" not in texto
 
 
 @pytest.mark.parametrize(
@@ -636,7 +649,8 @@ def test_a_failure_in_the_middle_never_leaks_the_password_through_the_error_or_l
     ):
         operacion(ana, carla)
 
-    assert CLAVE not in str(error.value) and CLAVE not in caplog.text
+    assert CLAVE not in str(error.value)
+    assert CLAVE not in caplog.text
 
 
 def test_validator_failures_never_leak_the_password_through_logs(ana, carla, caplog):
@@ -652,7 +666,8 @@ def test_validator_failures_never_leak_the_password_through_logs(ana, carla, cap
 def test_a_created_user_authenticates_with_the_real_hasher(ana):
     usuario = crear(ana)
 
-    assert usuario.password.startswith("argon2$argon2id$") and usuario.check_password(CLAVE)
+    assert usuario.password.startswith("argon2$argon2id$")
+    assert usuario.check_password(CLAVE)
 
 
 # --- ramas restantes ---
@@ -666,12 +681,15 @@ def test_a_well_formed_but_overlong_email_is_rejected(ana):
 
 
 def test_edit_resolves_a_unique_index_clash_when_the_precheck_is_bypassed(ana, beto):
-    with mock.patch.object(services, "_verificar_duplicados"):
-        with pytest.raises(services.CorreoDuplicado):
-            services.editar_usuario(ana.pk, beto.pk, {"correo": "ANA@empresa.test"})
+    with (
+        mock.patch.object(services, "_verificar_duplicados"),
+        pytest.raises(services.CorreoDuplicado),
+    ):
+        services.editar_usuario(ana.pk, beto.pk, {"correo": "ANA@empresa.test"})
 
     beto.refresh_from_db()
-    assert beto.correo == "beto@empresa.test" and Evento.objects.count() == 0
+    assert beto.correo == "beto@empresa.test"
+    assert Evento.objects.count() == 0
 
 
 def test_change_role_rejects_an_unknown_role(ana, carla):
@@ -680,8 +698,10 @@ def test_change_role_rejects_an_unknown_role(ana, carla):
 
 
 def test_a_validator_rejection_message_is_built_from_the_validators_text(ana, carla):
-    with mock.patch.object(
-        services, "validate_password", side_effect=ValidationError(["Regla incumplida."])
+    with (
+        mock.patch.object(
+            services, "validate_password", side_effect=ValidationError(["Regla incumplida."])
+        ),
+        pytest.raises(services.DatosDeUsuarioInvalidos, match="Regla incumplida"),
     ):
-        with pytest.raises(services.DatosDeUsuarioInvalidos, match="Regla incumplida"):
-            services.restablecer_contrasena(ana.pk, carla.pk, CLAVE)
+        services.restablecer_contrasena(ana.pk, carla.pk, CLAVE)

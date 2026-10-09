@@ -63,7 +63,7 @@ def roles_db():
     try:
         with closing(conectar(ROLES_TEST_DB)) as conn:
             conn.execute(PRIVILEGES_SQL.read_text(encoding="utf-8"))
-        subprocess.run(  # noqa: S603
+        subprocess.run(
             [sys.executable, "manage.py", "migrate", "--noinput"],
             cwd=BACKEND_DIR,
             env={

@@ -1,25 +1,33 @@
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-extend-exclude = ["**/migrations"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "S", "DJ", "T20"]
+select = ["E", "F", "I", "B", "UP", "S", "DJ", "T20", "DTZ", "BLE", "PT", "RUF", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101", "S105", "S106"]
 "proxytests/**" = ["S101", "S310"]
+# Migraciones: archivos generados por Django; no se reformatean ni se anotan a mano
+# (RUF012: `dependencies`/`operations` son atributos de clase que Django exige como listas).
+"**/migrations/**" = ["E501", "UP", "I", "RUF012"]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["test_*.py"]
 # proxytests/ requiere el stack real: se ejecuta con `make test-proxy`.
 testpaths = ["apps", "config"]
-addopts = "--ds=config.settings.test --durations=10 -p no:cacheprovider --cov=apps --cov=config --cov-report=term-missing --cov-fail-under=85"
+# --ds: el compose fija DJANGO_SETTINGS_MODULE=config.settings.dev y eso pisaría el valor de arriba.
+# La cobertura (--cov...) vive en `make test`, no aquí: así `pytest` suelto no la exige.
+addopts = "--ds=config.settings.test --durations=10 -p no:cacheprovider --strict-config --strict-markers"
 
 [tool.coverage.run]
 source = ["apps", "config"]
 omit = ["*/tests/*", "config/wsgi.py"]
+branch = true
 # Cada proceso escribe su propio archivo de datos: las pruebas que importan settings.prod en un
 # intérprete nuevo (subprocess) también se miden y se combinan al final (ver conftest.py).
 parallel = true

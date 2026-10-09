@@ -67,7 +67,8 @@ def test_an_admin_changes_their_own_password(api_admin, usuario):
     assert respuesta.status_code == 200
     assert set(respuesta.json()) == {"id", "nombre", "correo", "rol", "numero_nomina"}
     usuario.refresh_from_db()
-    assert usuario.check_password(NUEVA) and not usuario.check_password(DEFAULT_PASSWORD)
+    assert usuario.check_password(NUEVA)
+    assert not usuario.check_password(DEFAULT_PASSWORD)
     assert api_admin.get(ME).status_code == 200  # la sesión que cambió la clave sigue vigente
 
 
@@ -83,9 +84,11 @@ def test_the_change_writes_an_event_without_any_password_data(api_admin, usuario
     cambiar(api_admin)
 
     evento = Evento.objects.get(tipo="USUARIO_CONTRASENA_CAMBIADA")
-    assert evento.usuario == usuario and evento.ip == "127.0.0.1"
+    assert evento.usuario == usuario
+    assert evento.ip == "127.0.0.1"
     assert (evento.antes, evento.despues) == (None, None)
-    assert NUEVA not in evento.descripcion and usuario.password not in evento.descripcion
+    assert NUEVA not in evento.descripcion
+    assert usuario.password not in evento.descripcion
 
 
 def test_changing_the_password_invalidates_the_other_sessions(usuario, relaxed_rate):

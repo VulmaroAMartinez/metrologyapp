@@ -13,6 +13,7 @@ def admin():
     cambio de contraseña forzado."""
     cliente = Cliente()
     estado, _, perfil = cliente.iniciar_sesion(ADMIN_CORREO, ADMIN_CLAVE)
-    assert estado == 200 and perfil["rol"] == "ADMIN"
+    assert estado == 200
+    assert perfil["rol"] == "ADMIN"
     assert set(perfil) == {"id", "nombre", "correo", "rol", "numero_nomina"}
     return cliente

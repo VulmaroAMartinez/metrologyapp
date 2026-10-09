@@ -26,7 +26,7 @@ class UsuarioActualSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Usuario
-        fields = ["id", "nombre", "correo", "rol", "numero_nomina"]
+        fields = ("id", "nombre", "correo", "rol", "numero_nomina")
         read_only_fields = fields
 
 
@@ -41,7 +41,7 @@ class UsuarioAdminSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Usuario
-        fields = [
+        fields = (
             "id",
             "nombre",
             "correo",
@@ -50,7 +50,7 @@ class UsuarioAdminSerializer(serializers.ModelSerializer):
             "activo",
             "creado_en",
             "bloqueado_hasta",
-        ]
+        )
         read_only_fields = fields
 
 

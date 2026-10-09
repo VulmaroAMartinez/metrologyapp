@@ -6,34 +6,63 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
-    dependencies = [
-    ]
+    dependencies = []
 
     operations = [
         migrations.CreateModel(
-            name='Usuario',
+            name="Usuario",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('password', models.CharField(max_length=128, verbose_name='password')),
-                ('last_login', models.DateTimeField(blank=True, null=True, verbose_name='last login')),
-                ('nombre', models.CharField(max_length=150)),
-                ('numero_nomina', models.CharField(blank=True, default='', max_length=20)),
-                ('correo', models.EmailField(max_length=254, unique=True)),
-                ('rol', models.CharField(choices=[('ADMIN', 'Administrador'), ('TECNICO', 'Técnico'), ('ESPECTADOR', 'Espectador')], max_length=10)),
-                ('activo', models.BooleanField(default=True)),
-                ('intentos_fallidos', models.IntegerField(default=0)),
-                ('bloqueado_hasta', models.DateTimeField(blank=True, null=True)),
-                ('debe_cambiar_contrasena', models.BooleanField(default=False)),
-                ('creado_en', models.DateTimeField(auto_now_add=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True, primary_key=True, serialize=False, verbose_name="ID"
+                    ),
+                ),
+                ("password", models.CharField(max_length=128, verbose_name="password")),
+                (
+                    "last_login",
+                    models.DateTimeField(blank=True, null=True, verbose_name="last login"),
+                ),
+                ("nombre", models.CharField(max_length=150)),
+                ("numero_nomina", models.CharField(blank=True, default="", max_length=20)),
+                ("correo", models.EmailField(max_length=254, unique=True)),
+                (
+                    "rol",
+                    models.CharField(
+                        choices=[
+                            ("ADMIN", "Administrador"),
+                            ("TECNICO", "Técnico"),
+                            ("ESPECTADOR", "Espectador"),
+                        ],
+                        max_length=10,
+                    ),
+                ),
+                ("activo", models.BooleanField(default=True)),
+                ("intentos_fallidos", models.IntegerField(default=0)),
+                ("bloqueado_hasta", models.DateTimeField(blank=True, null=True)),
+                ("debe_cambiar_contrasena", models.BooleanField(default=False)),
+                ("creado_en", models.DateTimeField(auto_now_add=True)),
             ],
             options={
-                'constraints': [models.UniqueConstraint(django.db.models.functions.text.Lower('correo'), name='usuario_correo_unico_ci'), models.CheckConstraint(condition=models.Q(('rol__in', ['ADMIN', 'TECNICO', 'ESPECTADOR'])), name='usuario_rol_valido'), models.CheckConstraint(condition=models.Q(('intentos_fallidos__gte', 0)), name='usuario_intentos_no_negativos')],
+                "constraints": [
+                    models.UniqueConstraint(
+                        django.db.models.functions.text.Lower("correo"),
+                        name="usuario_correo_unico_ci",
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("rol__in", ["ADMIN", "TECNICO", "ESPECTADOR"])),
+                        name="usuario_rol_valido",
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("intentos_fallidos__gte", 0)),
+                        name="usuario_intentos_no_negativos",
+                    ),
+                ],
             },
             managers=[
-                ('objects', apps.accounts.managers.UsuarioManager()),
+                ("objects", apps.accounts.managers.UsuarioManager()),
             ],
         ),
     ]

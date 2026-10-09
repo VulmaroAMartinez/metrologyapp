@@ -1,4 +1,4 @@
-"""Matriz de permisos rol × acción × método.
+"""Matriz de permisos rol x acción x método.
 
 La tabla esperada está escrita a mano aquí, copiada de docs/DEFINICION.md §3, y NO importa
 nada del código bajo prueba: si `ACCIONES_POR_ROL` se equivoca, la prueba no se "autoaprueba".
@@ -101,7 +101,7 @@ def test_requiere_only_accepts_actions():
     assert requiere(Accion.VER_BITACORA).accion_requerida is Accion.VER_BITACORA
 
 
-# --- rol × acción × método sobre vistas de prueba --------------------------------------------
+# --- rol x acción x método sobre vistas de prueba --------------------------------------------
 
 
 @pytest.mark.parametrize("metodo", METODOS)
@@ -244,8 +244,10 @@ def test_permission_denials_write_no_event_only_a_log_line(caplog):
         r.getMessage() for r in caplog.records if r.getMessage().startswith("Permiso denegado")
     ]
     assert len(lineas) == 1
-    assert "rol=ESPECTADOR" in lineas[0] and "accion=VER_BITACORA" in lineas[0]
-    assert "metodo=GET" in lineas[0] and ruta_de(Accion.VER_BITACORA) in lineas[0]
+    assert "rol=ESPECTADOR" in lineas[0]
+    assert "accion=VER_BITACORA" in lineas[0]
+    assert "metodo=GET" in lineas[0]
+    assert ruta_de(Accion.VER_BITACORA) in lineas[0]
     for sensible in ("espectador@empresa.test", api.session_cookie, api.token, "argon2", "md5$"):
         assert sensible not in lineas[0]
 

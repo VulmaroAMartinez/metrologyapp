@@ -70,7 +70,7 @@ def test_non_operational_database_errors_also_propagate(usuario_ana):
 
 @pytest.mark.django_db
 def test_the_lock_error_is_recognized_by_its_sqlstate_alone(usuario_ana):
-    class ConSqlstate(Exception):  # noqa: N818
+    class ConSqlstate(Exception):
         sqlstate = "55P03"
 
     with mock.patch.object(

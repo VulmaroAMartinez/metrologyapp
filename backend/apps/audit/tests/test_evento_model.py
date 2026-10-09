@@ -75,7 +75,8 @@ def test_insert_with_defaults_means_system_event():
 
     assert evento.usuario is None  # Sistema
     assert (evento.instrumento_id, evento.antes, evento.despues, evento.ip) == (None,) * 4
-    assert timezone.is_aware(evento.ocurrido_en) and antes <= evento.ocurrido_en <= timezone.now()
+    assert timezone.is_aware(evento.ocurrido_en)
+    assert antes <= evento.ocurrido_en <= timezone.now()
 
 
 def test_all_fields_round_trip():

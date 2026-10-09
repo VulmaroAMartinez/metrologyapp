@@ -5,24 +5,90 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('audit', '0001_initial'),
+        ("audit", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.RemoveConstraint(
-            model_name='evento',
-            name='evento_tipo_valido',
+            model_name="evento",
+            name="evento_tipo_valido",
         ),
         migrations.AlterField(
-            model_name='evento',
-            name='tipo',
-            field=models.CharField(choices=[('INSTRUMENTO_ALTA', 'Instrumento Alta'), ('INSTRUMENTO_EDITADO', 'Instrumento Editado'), ('INSTRUMENTO_CAMBIO_AREA', 'Instrumento Cambio Area'), ('INSTRUMENTO_CAMBIO_ESTADO', 'Instrumento Cambio Estado'), ('CALIBRACION_REGISTRADA', 'Calibracion Registrada'), ('CERTIFICADO_SUBIDO', 'Certificado Subido'), ('CERTIFICADO_ELIMINADO', 'Certificado Eliminado'), ('REEMPLAZO_INICIADO', 'Reemplazo Iniciado'), ('REEMPLAZO_TERMINADO', 'Reemplazo Terminado'), ('AVISO_CREADO', 'Aviso Creado'), ('AVISO_EDITADO', 'Aviso Editado'), ('AVISO_CANCELADO', 'Aviso Cancelado'), ('AVISO_ENVIADO', 'Aviso Enviado'), ('AVISO_FALLIDO', 'Aviso Fallido'), ('USUARIO_CREADO', 'Usuario Creado'), ('USUARIO_ROL_CAMBIADO', 'Usuario Rol Cambiado'), ('USUARIO_DESACTIVADO', 'Usuario Desactivado'), ('USUARIO_CONTRASENA_RESTABLECIDA', 'Usuario Contrasena Restablecida'), ('SESION_INICIADA', 'Sesion Iniciada'), ('SESION_FALLIDA', 'Sesion Fallida'), ('CATALOGO_MODIFICADO', 'Catalogo Modificado'), ('CONFIGURACION_CAMBIADA', 'Configuracion Cambiada'), ('PROCESO_DIARIO_EJECUTADO', 'Proceso Diario Ejecutado'), ('CUENTA_BLOQUEADA', 'Cuenta Bloqueada'), ('USUARIO_CONTRASENA_CAMBIADA', 'Usuario Contrasena Cambiada'), ('USUARIO_EDITADO', 'Usuario Editado'), ('USUARIO_REACTIVADO', 'Usuario Reactivado')], max_length=40),
+            model_name="evento",
+            name="tipo",
+            field=models.CharField(
+                choices=[
+                    ("INSTRUMENTO_ALTA", "Instrumento Alta"),
+                    ("INSTRUMENTO_EDITADO", "Instrumento Editado"),
+                    ("INSTRUMENTO_CAMBIO_AREA", "Instrumento Cambio Area"),
+                    ("INSTRUMENTO_CAMBIO_ESTADO", "Instrumento Cambio Estado"),
+                    ("CALIBRACION_REGISTRADA", "Calibracion Registrada"),
+                    ("CERTIFICADO_SUBIDO", "Certificado Subido"),
+                    ("CERTIFICADO_ELIMINADO", "Certificado Eliminado"),
+                    ("REEMPLAZO_INICIADO", "Reemplazo Iniciado"),
+                    ("REEMPLAZO_TERMINADO", "Reemplazo Terminado"),
+                    ("AVISO_CREADO", "Aviso Creado"),
+                    ("AVISO_EDITADO", "Aviso Editado"),
+                    ("AVISO_CANCELADO", "Aviso Cancelado"),
+                    ("AVISO_ENVIADO", "Aviso Enviado"),
+                    ("AVISO_FALLIDO", "Aviso Fallido"),
+                    ("USUARIO_CREADO", "Usuario Creado"),
+                    ("USUARIO_ROL_CAMBIADO", "Usuario Rol Cambiado"),
+                    ("USUARIO_DESACTIVADO", "Usuario Desactivado"),
+                    ("USUARIO_CONTRASENA_RESTABLECIDA", "Usuario Contrasena Restablecida"),
+                    ("SESION_INICIADA", "Sesion Iniciada"),
+                    ("SESION_FALLIDA", "Sesion Fallida"),
+                    ("CATALOGO_MODIFICADO", "Catalogo Modificado"),
+                    ("CONFIGURACION_CAMBIADA", "Configuracion Cambiada"),
+                    ("PROCESO_DIARIO_EJECUTADO", "Proceso Diario Ejecutado"),
+                    ("CUENTA_BLOQUEADA", "Cuenta Bloqueada"),
+                    ("USUARIO_CONTRASENA_CAMBIADA", "Usuario Contrasena Cambiada"),
+                    ("USUARIO_EDITADO", "Usuario Editado"),
+                    ("USUARIO_REACTIVADO", "Usuario Reactivado"),
+                ],
+                max_length=40,
+            ),
         ),
         migrations.AddConstraint(
-            model_name='evento',
-            constraint=models.CheckConstraint(condition=models.Q(('tipo__in', ['INSTRUMENTO_ALTA', 'INSTRUMENTO_EDITADO', 'INSTRUMENTO_CAMBIO_AREA', 'INSTRUMENTO_CAMBIO_ESTADO', 'CALIBRACION_REGISTRADA', 'CERTIFICADO_SUBIDO', 'CERTIFICADO_ELIMINADO', 'REEMPLAZO_INICIADO', 'REEMPLAZO_TERMINADO', 'AVISO_CREADO', 'AVISO_EDITADO', 'AVISO_CANCELADO', 'AVISO_ENVIADO', 'AVISO_FALLIDO', 'USUARIO_CREADO', 'USUARIO_ROL_CAMBIADO', 'USUARIO_DESACTIVADO', 'USUARIO_CONTRASENA_RESTABLECIDA', 'SESION_INICIADA', 'SESION_FALLIDA', 'CATALOGO_MODIFICADO', 'CONFIGURACION_CAMBIADA', 'PROCESO_DIARIO_EJECUTADO', 'CUENTA_BLOQUEADA', 'USUARIO_CONTRASENA_CAMBIADA', 'USUARIO_EDITADO', 'USUARIO_REACTIVADO'])), name='evento_tipo_valido'),
+            model_name="evento",
+            constraint=models.CheckConstraint(
+                condition=models.Q(
+                    (
+                        "tipo__in",
+                        [
+                            "INSTRUMENTO_ALTA",
+                            "INSTRUMENTO_EDITADO",
+                            "INSTRUMENTO_CAMBIO_AREA",
+                            "INSTRUMENTO_CAMBIO_ESTADO",
+                            "CALIBRACION_REGISTRADA",
+                            "CERTIFICADO_SUBIDO",
+                            "CERTIFICADO_ELIMINADO",
+                            "REEMPLAZO_INICIADO",
+                            "REEMPLAZO_TERMINADO",
+                            "AVISO_CREADO",
+                            "AVISO_EDITADO",
+                            "AVISO_CANCELADO",
+                            "AVISO_ENVIADO",
+                            "AVISO_FALLIDO",
+                            "USUARIO_CREADO",
+                            "USUARIO_ROL_CAMBIADO",
+                            "USUARIO_DESACTIVADO",
+                            "USUARIO_CONTRASENA_RESTABLECIDA",
+                            "SESION_INICIADA",
+                            "SESION_FALLIDA",
+                            "CATALOGO_MODIFICADO",
+                            "CONFIGURACION_CAMBIADA",
+                            "PROCESO_DIARIO_EJECUTADO",
+                            "CUENTA_BLOQUEADA",
+                            "USUARIO_CONTRASENA_CAMBIADA",
+                            "USUARIO_EDITADO",
+                            "USUARIO_REACTIVADO",
+                        ],
+                    )
+                ),
+                name="evento_tipo_valido",
+            ),
         ),
     ]

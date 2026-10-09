@@ -5,19 +5,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('audit', '0003_quitar_tipos_aviso'),
+        ("audit", "0003_quitar_tipos_aviso"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.RemoveIndex(
-            model_name='evento',
-            name='evento_ocurrido_en_idx',
+            model_name="evento",
+            name="evento_ocurrido_en_idx",
         ),
         migrations.AddIndex(
-            model_name='evento',
-            index=models.Index(fields=['-ocurrido_en', '-id'], name='evento_ocurrido_id_idx'),
+            model_name="evento",
+            index=models.Index(fields=["-ocurrido_en", "-id"], name="evento_ocurrido_id_idx"),
         ),
     ]

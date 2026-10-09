@@ -49,7 +49,8 @@ def test_unknown_email_writes_one_event_without_user_and_never_stores_the_email(
     assert evento.despues == {"motivo": "no_existe"}
     texto = volcado()
     assert CORREO_AJENO not in texto
-    assert "secreto.persona" not in texto and "dominio-raro" not in texto
+    assert "secreto.persona" not in texto
+    assert "dominio-raro" not in texto
 
 
 def test_every_failure_case_does_exactly_one_event_insert(cuentas, relaxed_rate):
@@ -104,9 +105,11 @@ def test_counter_and_event_are_committed_even_though_the_response_is_401():
 def test_contended_attempt_writes_a_single_failure_event(api, usuario):
     error = OperationalError("could not obtain lock")
     error.__cause__ = LockNotAvailable()
-    with mock.patch.object(services.Usuario.objects, "select_for_update", side_effect=error):
-        with CaptureQueriesContext(connection) as consultas:
-            respuesta = api.login(usuario.correo, DEFAULT_PASSWORD)
+    with (
+        mock.patch.object(services.Usuario.objects, "select_for_update", side_effect=error),
+        CaptureQueriesContext(connection) as consultas,
+    ):
+        respuesta = api.login(usuario.correo, DEFAULT_PASSWORD)
 
     assert respuesta.status_code == 401
     assert len(inserciones_de_eventos(consultas)) == 1
@@ -156,7 +159,8 @@ def test_successful_login_writes_one_event_with_user_and_ip(api, usuario):
 
     evento = Evento.objects.get()
     assert (evento.tipo, evento.usuario, evento.ip) == ("SESION_INICIADA", usuario, "127.0.0.1")
-    assert evento.antes is None and evento.despues is None
+    assert evento.antes is None
+    assert evento.despues is None
 
 
 def test_if_the_login_event_fails_the_login_is_rolled_back(usuario):
@@ -200,7 +204,8 @@ def test_rate_limited_requests_write_no_event_only_a_log_line(
     assert Evento.objects.count() == 5  # el 429 no escribió nada
     registros = [r.getMessage() for r in caplog.records if "Límite de tasa" in r.getMessage()]
     assert len(registros) == 1
-    assert usuario.correo not in registros[0] and "mal-intento" not in registros[0]
+    assert usuario.correo not in registros[0]
+    assert "mal-intento" not in registros[0]
 
 
 # --- USUARIO_CONTRASENA_CAMBIADA ------------------------------------------------------------
