@@ -34,3 +34,6 @@ backups/
 .DS_Store
 Thumbs.db
 
+graphify-out/
+
+.proxytest.env
