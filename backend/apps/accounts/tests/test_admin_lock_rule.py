@@ -64,22 +64,22 @@ def aplanar(objetivos):
             yield destino
 
 
-def escribe_los_campos(funcion) -> bool:
+def escribe_los_campos(funcion, campos=CAMPOS) -> bool:
     for nodo in ast.walk(funcion):
         if isinstance(nodo, ast.Assign | ast.AugAssign | ast.AnnAssign):
             objetivos = nodo.targets if isinstance(nodo, ast.Assign) else [nodo.target]
-            if any(isinstance(t, ast.Attribute) and t.attr in CAMPOS for t in aplanar(objetivos)):
+            if any(isinstance(t, ast.Attribute) and t.attr in campos for t in aplanar(objetivos)):
                 return True
         if isinstance(nodo, ast.Call):
             nombre = nombre_de_la_llamada(nodo)
-            if nombre in ESCRITORES_DE_BD and any(k.arg in CAMPOS for k in nodo.keywords):
+            if nombre in ESCRITORES_DE_BD and any(k.arg in campos for k in nodo.keywords):
                 return True
             if nombre == "setattr" and len(nodo.args) > 1:
                 campo = nodo.args[1]
-                if isinstance(campo, ast.Constant) and campo.value in CAMPOS:
+                if isinstance(campo, ast.Constant) and campo.value in campos:
                     return True
             if nombre == "bulk_update" and any(
-                isinstance(c, ast.Constant) and c.value in CAMPOS
+                isinstance(c, ast.Constant) and c.value in campos
                 for argumento in nodo.args
                 for c in ast.walk(argumento)
             ):
@@ -92,6 +92,17 @@ def toma_el_candado(funcion) -> bool:
         isinstance(n, ast.Call) and nombre_de_la_llamada(n) == "_bloquear"
         for n in ast.walk(funcion)
     )
+
+
+def escritores_de(campos):
+    encontrados = {}
+    for ruta in archivos_de_codigo():
+        arbol = ast.parse(ruta.read_text(encoding="utf-8"))
+        relativa = ruta.relative_to(BACKEND).as_posix()
+        for nombre, funcion in funciones(arbol):
+            if escribe_los_campos(funcion, campos):
+                encontrados[f"{relativa}:{nombre}"] = funcion
+    return encontrados
 
 
 def escritores():
@@ -153,3 +164,38 @@ def test_editar_usuario_cannot_be_used_to_write_rol_or_activo():
     }
 
     assert set(services._limpiar_campos(intento)) <= {"nombre", "correo", "numero_nomina"}
+
+
+def test_only_deactivate_and_reset_bump_the_session_version_atomically_under_the_lock():
+    """`sesion_version` sube solo ahí: UPDATE atómico (F), bajo L0 y la fila del objetivo."""
+    escriben = {
+        nombre
+        for nombre, funcion in escritores_de(("sesion_version",)).items()
+        if "tests" not in nombre
+    }
+
+    esperados = {
+        "apps/accounts/services.py:_invalidar_sesiones_anteriores",
+    }
+    assert escriben == esperados
+
+    codigo = (BACKEND / "apps/accounts/services.py").read_text(encoding="utf-8")
+    arbol = ast.parse(codigo)
+    por_nombre = {n: f for n, f in funciones(arbol)}
+    ayudante = por_nombre["_invalidar_sesiones_anteriores"]
+    assert "F('sesion_version')" in ast.unparse(ayudante)  # incremento atómico, no leer-y-guardar
+    for nombre in ("desactivar_usuario", "restablecer_contrasena"):
+        llamadas = {
+            nombre_de_la_llamada(n) for n in ast.walk(por_nombre[nombre]) if isinstance(n, ast.Call)
+        }
+        assert "_invalidar_sesiones_anteriores" in llamadas, nombre
+        assert toma_el_candado(por_nombre[nombre]), nombre
+    otros = [
+        n
+        for n, f in funciones(arbol)
+        if n
+        not in {"desactivar_usuario", "restablecer_contrasena", "_invalidar_sesiones_anteriores"}
+        and "_invalidar_sesiones_anteriores"
+        in {nombre_de_la_llamada(c) for c in ast.walk(f) if isinstance(c, ast.Call)}
+    ]
+    assert otros == []

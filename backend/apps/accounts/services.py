@@ -473,9 +473,8 @@ def invalidar_sesiones(usuario_pk: int) -> int:
 
     django_session no guarda el usuario en una columna, así que se decodifica cada sesión
     vigente; aceptable para el volumen de este sistema (decisiones.md: ~1 ms con 300 sesiones).
-    Es limpieza posterior al commit: la invalidación real no depende de ella (un usuario
-    desactivado falla `is_active` en cada petición y, tras un cambio de contraseña, el hash de
-    sesión ya no coincide)."""
+    Es SOLO limpieza posterior al commit: la invalidación real es `sesion_version` (entra en el
+    hash de sesión), que no depende de que este borrado ocurra."""
     claves = [
         sesion.session_key
         for sesion in Session.objects.filter(expire_date__gt=timezone.now()).iterator()
@@ -484,6 +483,14 @@ def invalidar_sesiones(usuario_pk: int) -> int:
     if claves:
         Session.objects.filter(session_key__in=claves).delete()
     return len(claves)
+
+
+def _invalidar_sesiones_anteriores(objetivo) -> None:
+    """Sube `sesion_version` con un UPDATE atómico (F), en la misma transacción y bajo los mismos
+    candados que la operación: toda sesión creada antes deja de coincidir con el hash de sesión,
+    para siempre y sin depender de ningún borrado. El borrado de filas es solo limpieza."""
+    Usuario.objects.filter(pk=objetivo.pk).update(sesion_version=F("sesion_version") + 1)
+    objetivo.refresh_from_db(fields=["sesion_version"])
 
 
 def _cerrar_sesiones(usuario_pk: int) -> None:
@@ -619,6 +626,7 @@ def desactivar_usuario(actor_pk, objetivo_pk, ip=None) -> Usuario:
             _garantizar_administrador_restante(administradores, objetivo.pk)
         objetivo.activo = False
         objetivo.save(update_fields=["activo"])
+        _invalidar_sesiones_anteriores(objetivo)
         _programar_cierre_de_sesiones(objetivo.pk)
         registrar_evento(
             TipoEvento.USUARIO_DESACTIVADO,
@@ -639,8 +647,7 @@ def reactivar_usuario(actor_pk, objetivo_pk, ip=None) -> Usuario:
             return objetivo
         objetivo.activo = True
         objetivo.save(update_fields=["activo"])
-        # Si el borrado de sesiones al desactivar falló, una sesión vieja volvería a valer al
-        # reactivar: se cierra también aquí.
+        # Solo limpieza: las sesiones anteriores ya son inválidas por `sesion_version`.
         _programar_cierre_de_sesiones(objetivo.pk)
         registrar_evento(
             TipoEvento.USUARIO_REACTIVADO,
@@ -685,6 +692,7 @@ def restablecer_contrasena(actor_pk, objetivo_pk, contrasena, ip=None, solo_rol=
             _validar_contrasena(contrasena, objetivo)
         objetivo.password = cifrada
         objetivo.save(update_fields=["password"])
+        _invalidar_sesiones_anteriores(objetivo)
         _programar_cierre_de_sesiones(objetivo.pk)
         origen = " por comando de servidor" if actor is None else ""
         registrar_evento(

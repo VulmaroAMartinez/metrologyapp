@@ -66,9 +66,9 @@ def test_a_deactivated_users_old_session_gets_401_even_without_the_cleanup(
     assert respuesta.status_code == 200  # un fallo de la limpieza no tumba la operación
     siguiente = sesion.get(ME)
     assert siguiente.status_code == 401
-    assert siguiente.json()["codigo"] == "no_autenticado"
-    # La fila sigue ahí (la limpieza no corrió): el 401 viene de is_active, no del borrado.
-    assert Session.objects.filter(session_key=sesion.session_cookie).exists()
+    assert (
+        siguiente.json()["codigo"] == "no_autenticado"
+    )  # por la versión de sesión, no por el borrado
 
 
 @pytest.mark.parametrize("limpieza", [sin_limpieza, limpieza_que_falla], ids=["apagada", "falla"])
@@ -167,14 +167,14 @@ def test_a_failed_operation_closes_no_session(operacion, usuario, tecnico, relax
 
 
 def test_reactivating_closes_the_stale_sessions_a_failed_cleanup_left_behind(admin_api, tecnico):
-    """Sin esto, reactivar tras un borrado fallido hacía valer otra vez la sesión vieja."""
+    """La fila que un borrado fallido dejó se limpia al reactivar (solo limpieza: la sesión ya
+    era inválida por `sesion_version`, ver test_session_version.py)."""
     sesion = abrir(tecnico)
     with limpieza_que_falla():
         admin_api.post(ruta(tecnico.pk, "desactivar"))
-    assert sesion.get(ME).status_code == 401
     assert Session.objects.filter(session_key=sesion.session_cookie).exists()  # quedó la fila
 
     admin_api.post(ruta(tecnico.pk, "reactivar"))  # esta vez la limpieza funciona
 
-    assert sesion.get(ME).status_code == 401  # no revive
     assert not Session.objects.filter(session_key=sesion.session_cookie).exists()
+    assert sesion.get(ME).status_code == 401  # no revive

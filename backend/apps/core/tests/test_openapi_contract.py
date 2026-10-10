@@ -113,6 +113,10 @@ def test_the_error_codes_that_were_removed_do_not_appear_anywhere(esquema):
         assert retirado not in texto
 
 
+def test_the_session_version_is_not_in_the_contract(esquema):
+    assert "sesion_version" not in json.dumps(esquema)
+
+
 def test_passwords_are_write_only_in_the_contract(esquema):
     campos = esquema["components"]["schemas"]
     for nombre in ("CrearUsuario", "RestablecerContrasena", "CambiarContrasena", "Login"):

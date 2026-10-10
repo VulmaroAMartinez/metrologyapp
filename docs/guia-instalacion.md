@@ -120,6 +120,13 @@ La sesión se cierra por inactividad (`SESSION_IDLE_MINUTES`, 30) y, aunque haya
 continua, a las `SESSION_ABSOLUTE_HOURS` (12) de haber iniciado sesión: pasado ese tiempo hay que
 volver a escribir la contraseña. Al vencer no se registra evento.
 
+Desactivar a un usuario o restablecerle la contraseña invalida **para siempre** sus sesiones
+anteriores (`sesion_version`), aunque después se le reactive: no depende de que se borren filas.
+
+**Al desplegar el cambio que introdujo `sesion_version` (migración `accounts.0006`) se cierran
+las sesiones existentes una vez**: la fórmula del hash de sesión cambia y todos los usuarios
+deben volver a iniciar sesión. Conviene avisarles.
+
 ## Redes del compose
 
 La base de datos, el frontend y las herramientas viven en la red `internal` (`internal: true`), sin

@@ -282,3 +282,36 @@ def test_accounts_0005_refuses_to_run_with_non_ascii_users_and_then_enforces_asc
 
 def insertar_0005(base, correo, nomina=None):
     insertar_0004(base, correo, nomina)
+
+
+# --- accounts.0006: sesion_version ----------------------------------------------------------------
+
+
+def test_accounts_0006_adds_the_session_version_at_zero_and_keeps_every_user(base):
+    migrar_bien(base, "accounts", "0005")
+    insertar_0004(base, "a@e.test", "N-1")
+    insertar_0004(base, "b@e.test")
+    assert "sesion_version" not in base.columnas("accounts_usuario")
+    consulta = (
+        "SELECT correo, nombre, rol, numero_nomina, password, activo "
+        "FROM accounts_usuario ORDER BY correo"
+    )
+    antes = base.consulta(consulta)
+
+    migrar_bien(base, "accounts", "0006")
+
+    assert "sesion_version" in base.columnas("accounts_usuario")
+    assert base.consulta("SELECT sesion_version FROM accounts_usuario") == [(0,), (0,)]
+    assert base.consulta(consulta) == antes  # ni un dato de ningún usuario cambió
+    base.ejecutar(
+        "UPDATE accounts_usuario SET sesion_version = sesion_version + 1"
+    )  # atómico, sin NULL
+    assert base.consulta("SELECT sesion_version FROM accounts_usuario") == [(1,), (1,)]
+
+
+def test_accounts_0006_can_be_reversed(base):
+    migrar_bien(base, "accounts", "0006")
+
+    migrar_bien(base, "accounts", "0005")
+
+    assert "sesion_version" not in base.columnas("accounts_usuario")
