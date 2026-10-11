@@ -118,7 +118,7 @@ real y escaneo de secretos). Las pruebas marcadas «stack real» son de `make te
 | Sin secretos en el repositorio ni en el historial (gitleaks, historial y archivos) | `make secrets` |
 | `.env` fuera de git y todos los secretos de `.env.example` marcados como de ejemplo y rechazados por producción (ver también la sección 6) | `git check-ignore .env` |
 | Dependencias bloqueadas con hashes, instaladas con `--require-hashes` y auditadas con pip-audit | `make audit`, `make lock` |
-| Cobertura de código ≥ 85 % (incluye `settings/prod.py`, medido también en subprocesos) | `make test` |
+| Cobertura de código ≥ 95 % (ramas) (incluye `settings/prod.py`, medido también en subprocesos) | `make test` |
 
 ## 11. Correcciones de la revisión del sprint 1
 

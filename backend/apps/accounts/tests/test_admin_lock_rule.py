@@ -165,7 +165,7 @@ def test_the_low_level_creator_is_only_called_from_crear_usuario():
 
 
 def test_editar_usuario_cannot_be_used_to_write_rol_or_activo():
-    """`editar_usuario` escribe con setattr sobre los campos que deja pasar `_limpiar_campos`."""
+    """`editar_usuario` escribe con setattr sobre los campos que deja pasar `limpiar_campos`."""
     intento = {
         "nombre": "x",
         "correo": "a@b.co",

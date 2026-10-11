@@ -32,17 +32,10 @@ CREDENCIALES_INVALIDAS = {
 }
 
 
-def respuesta(data=None, status=200, headers=None):
-    """Las respuestas de autenticación nunca se almacenan en caché."""
-    response = Response(data, status=status, headers=headers)
-    response["Cache-Control"] = "no-store"
-    return response
-
-
 def demasiados_intentos(*resultados):
     espera = max(r.retry_after for r in resultados if not r.allowed)
     logger.warning("Límite de tasa excedido; reintento en %s s", espera)
-    return respuesta(
+    return Response(
         {
             "codigo": "demasiados_intentos",
             "detalle": "Demasiados intentos. Espera e inténtalo de nuevo.",
@@ -62,7 +55,7 @@ def demasiados_intentos(*resultados):
 @permission_classes([AllowAny])
 def csrf(request):
     """Entrega el token y fija la cookie CSRF. Se llama antes de cualquier POST."""
-    return respuesta({"csrfToken": get_token(request._request)})
+    return Response({"csrfToken": get_token(request._request)})
 
 
 @extend_schema(
@@ -99,8 +92,8 @@ def login(request):
     resultado = services.iniciar_sesion(request, correo, serializer.validated_data["contrasena"])
     if resultado.usuario is None:
         # Misma respuesta para correo inexistente, contraseña incorrecta, inactivo y bloqueado.
-        return respuesta(CREDENCIALES_INVALIDAS, status=401)
-    return respuesta(UsuarioActualSerializer(resultado.usuario).data)
+        return Response(CREDENCIALES_INVALIDAS, status=401)
+    return Response(UsuarioActualSerializer(resultado.usuario).data)
 
 
 @extend_schema(
@@ -114,7 +107,7 @@ def login(request):
 @permission_classes([AllowAny])
 def logout(request):
     services.cerrar_sesion(request)
-    return respuesta(status=204)
+    return Response(status=204)
 
 
 @extend_schema(
@@ -126,7 +119,7 @@ def logout(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])  # cualquier rol autenticado
 def me(request):
-    return respuesta(UsuarioActualSerializer(request.user).data)
+    return Response(UsuarioActualSerializer(request.user).data)
 
 
 @extend_schema(
@@ -163,4 +156,4 @@ def cambiar_contrasena(request):
         serializer.validated_data["contrasena_actual"],
         serializer.validated_data["contrasena_nueva"],
     )
-    return respuesta(UsuarioActualSerializer(usuario).data)
+    return Response(UsuarioActualSerializer(usuario).data)

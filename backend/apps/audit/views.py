@@ -4,10 +4,10 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serial
 from rest_framework import serializers as drf_serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import ValidationError
+from rest_framework.response import Response
 from rest_framework.utils.urls import replace_query_param
 
 from apps.accounts.permissions import Accion, requiere
-from apps.accounts.views import respuesta
 from apps.core.openapi import DATOS_INVALIDOS, NO_AUTENTICADO, PERMISO_DENEGADO
 
 from . import services
@@ -55,4 +55,4 @@ def eventos(request):
     url_siguiente = None
     if siguiente:
         url_siguiente = replace_query_param(request.build_absolute_uri(), "cursor", siguiente)
-    return respuesta({"next": url_siguiente, "results": EventoSerializer(filas, many=True).data})
+    return Response({"next": url_siguiente, "results": EventoSerializer(filas, many=True).data})

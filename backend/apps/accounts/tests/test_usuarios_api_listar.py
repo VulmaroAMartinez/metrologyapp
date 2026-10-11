@@ -47,6 +47,18 @@ def test_list_shape_and_default_page_size(api_admin):
     assert all(set(fila) == CAMPOS for fila in cuerpo["results"])
 
 
+def test_a_repeated_filter_parameter_uses_the_last_value(api_admin):
+    """Ancla de `request.query_params.dict()`: con `?rol=A&rol=B` rige el ÚLTIMO valor.
+    Si se cambia a `getlist` (varios valores) debe ser una decisión de producto, no un accidente."""
+    crear_muchos(3, rol=ESPECTADOR)
+
+    respuesta = api_admin.get(f"{BASE}?rol=ADMIN&rol=ESPECTADOR")
+
+    assert respuesta.status_code == 200
+    assert {fila["rol"] for fila in respuesta.json()["results"]} == {"ESPECTADOR"}
+    assert respuesta.json()["count"] == 3
+
+
 def test_pagination_walks_through_every_user_exactly_once(api_admin):
     crear_muchos(30)
 

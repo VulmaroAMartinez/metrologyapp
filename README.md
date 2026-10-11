@@ -19,7 +19,7 @@ Si ejecutas `docker compose` a mano, usa `docker compose -f deploy/docker-compos
 | --- | --- |
 | `make up` / `make down` | Levanta (con migraciones) / detiene el entorno; los volúmenes se conservan |
 | `make migrate` | Aplica migraciones con el rol `migrator` |
-| `make test` | Pruebas del backend (pytest, cobertura mínima 85 %) |
+| `make test` | Pruebas del backend (pytest, cobertura mínima 95 %, con ramas) |
 | `make lint` | ruff + validación del compose y del Caddyfile |
 | `make fmt` | Formatea el backend con ruff |
 | `make lock` | Regenera `backend/requirements*.txt` con hashes |

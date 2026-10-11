@@ -1,12 +1,12 @@
 from rest_framework import serializers
 
-from .models import Usuario
+from apps.core.constantes import CORREO_MAX, MAX_PASSWORD_LENGTH, NOMBRE_MAX, NOMINA_MAX
 
-MAX_PASSWORD_LENGTH = 256  # evita enviar contraseñas enormes a Argon2
+from .models import Usuario
 
 
 class LoginSerializer(serializers.Serializer):
-    correo = serializers.EmailField(max_length=254)
+    correo = serializers.EmailField(max_length=CORREO_MAX)
     contrasena = serializers.CharField(
         max_length=MAX_PASSWORD_LENGTH, trim_whitespace=False, write_only=True
     )
@@ -69,23 +69,23 @@ class EstrictoSerializer(serializers.Serializer):
 
 
 class CrearUsuarioSerializer(EstrictoSerializer):
-    nombre = serializers.CharField(max_length=150)
-    correo = serializers.EmailField(max_length=254)
+    nombre = serializers.CharField(max_length=NOMBRE_MAX)
+    correo = serializers.EmailField(max_length=CORREO_MAX)
     rol = serializers.ChoiceField(choices=Usuario.Rol.choices)
     # La escribe el administrador; pasa por los validadores y nunca se devuelve ni se registra.
     contrasena = serializers.CharField(
         max_length=MAX_PASSWORD_LENGTH, trim_whitespace=False, write_only=True
     )
     numero_nomina = serializers.CharField(
-        max_length=20, required=False, allow_null=True, allow_blank=True
+        max_length=NOMINA_MAX, required=False, allow_null=True, allow_blank=True
     )
 
 
 class EditarUsuarioSerializer(EstrictoSerializer):
-    nombre = serializers.CharField(max_length=150, required=False)
-    correo = serializers.EmailField(max_length=254, required=False)
+    nombre = serializers.CharField(max_length=NOMBRE_MAX, required=False)
+    correo = serializers.EmailField(max_length=CORREO_MAX, required=False)
     numero_nomina = serializers.CharField(
-        max_length=20, required=False, allow_null=True, allow_blank=True
+        max_length=NOMINA_MAX, required=False, allow_null=True, allow_blank=True
     )
 
 

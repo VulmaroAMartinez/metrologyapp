@@ -13,7 +13,9 @@ from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import NotFound
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.response import Response
 
+from apps.core.constantes import TAMANO_MAXIMO, TAMANO_POR_DEFECTO
 from apps.core.network import client_ip
 from apps.core.openapi import (
     CONFLICTO,
@@ -36,7 +38,6 @@ from .serializers import (
     RestablecerContrasenaSerializer,
     UsuarioAdminSerializer,
 )
-from .views import respuesta
 
 PERMISOS = [requiere(Accion.GESTIONAR_USUARIOS)]
 TAGS = ["usuarios"]
@@ -61,9 +62,9 @@ ERRORES_DE_ESCRITURA = {
 
 
 class PaginadorUsuarios(PageNumberPagination):
-    page_size = 25
+    page_size = TAMANO_POR_DEFECTO
     page_size_query_param = "tamano"
-    max_page_size = 100
+    max_page_size = TAMANO_MAXIMO
     page_query_param = "pagina"
 
 
@@ -95,7 +96,7 @@ def _crear(request):
     usuario = services.crear_usuario(
         request.user.pk, ip=client_ip(request), **entrada.validated_data
     )
-    return respuesta(UsuarioAdminSerializer(usuario).data, status=201)
+    return Response(UsuarioAdminSerializer(usuario).data, status=201)
 
 
 @extend_schema(
@@ -146,13 +147,13 @@ def usuario(request, pk):
         objetivo = Usuario.objects.filter(pk=pk).first()
         if objetivo is None:
             raise NotFound("El usuario no existe.")
-        return respuesta(UsuarioAdminSerializer(objetivo).data)
+        return Response(UsuarioAdminSerializer(objetivo).data)
     entrada = EditarUsuarioSerializer(data=request.data)
     entrada.is_valid(raise_exception=True)
     objetivo = services.editar_usuario(
         request.user.pk, pk, dict(entrada.validated_data), ip=client_ip(request)
     )
-    return respuesta(UsuarioAdminSerializer(objetivo).data)
+    return Response(UsuarioAdminSerializer(objetivo).data)
 
 
 @extend_schema(
@@ -170,7 +171,7 @@ def cambiar_rol(request, pk):
     objetivo = services.cambiar_rol(
         request.user.pk, pk, entrada.validated_data["rol"], ip=client_ip(request)
     )
-    return respuesta(UsuarioAdminSerializer(objetivo).data)
+    return Response(UsuarioAdminSerializer(objetivo).data)
 
 
 @extend_schema(
@@ -184,7 +185,7 @@ def cambiar_rol(request, pk):
 @permission_classes(PERMISOS)
 def desactivar(request, pk):
     objetivo = services.desactivar_usuario(request.user.pk, pk, ip=client_ip(request))
-    return respuesta(UsuarioAdminSerializer(objetivo).data)
+    return Response(UsuarioAdminSerializer(objetivo).data)
 
 
 @extend_schema(
@@ -198,7 +199,7 @@ def desactivar(request, pk):
 @permission_classes(PERMISOS)
 def reactivar(request, pk):
     objetivo = services.reactivar_usuario(request.user.pk, pk, ip=client_ip(request))
-    return respuesta(UsuarioAdminSerializer(objetivo).data)
+    return Response(UsuarioAdminSerializer(objetivo).data)
 
 
 @extend_schema(
@@ -216,4 +217,4 @@ def restablecer_contrasena(request, pk):
     objetivo = services.restablecer_contrasena(
         request.user.pk, pk, entrada.validated_data["contrasena"], ip=client_ip(request)
     )
-    return respuesta(UsuarioAdminSerializer(objetivo).data)
+    return Response(UsuarioAdminSerializer(objetivo).data)

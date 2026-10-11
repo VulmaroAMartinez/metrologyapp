@@ -8,11 +8,11 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.core.constantes import TAMANO_MAXIMO, TAMANO_POR_DEFECTO
+
 from .models import Evento, TipoEvento
 from .sanitize import sanear
 
-TAMANO_POR_DEFECTO = 25
-TAMANO_MAXIMO = 100
 SISTEMA = "sistema"
 
 

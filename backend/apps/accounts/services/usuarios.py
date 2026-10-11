@@ -31,6 +31,7 @@ from rest_framework.exceptions import APIException
 
 from apps.audit.models import TipoEvento
 from apps.audit.services import registrar_evento
+from apps.core.constantes import CORREO_MAX, NOMBRE_MAX, NOMINA_MAX
 from apps.core.network import client_ip
 
 from .. import locks
@@ -38,10 +39,6 @@ from ..models import Usuario
 from ..permissions import Accion, puede
 
 logger = logging.getLogger(__name__)
-
-NOMBRE_MAX = 150
-NOMINA_MAX = 20
-CORREO_MAX = 254
 
 
 # --- errores de negocio ---------------------------------------------------------------------------

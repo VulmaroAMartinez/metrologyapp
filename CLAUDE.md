@@ -5,6 +5,15 @@ Si algo no está definido, revisa la sección 13 y pregunta; no inventes reglas 
 ## Comandos (se actualizan al terminar el sprint 1)
 - make up | make test | make lint | make ci
 
+## Estructura (backend/apps)
+- `accounts/services/{autenticacion,usuarios}.py`: reglas de negocio de cuentas; `services/__init__.py` reexporta la API.
+- `accounts/locks.py`: candados (L0 administradores, L1 fila); `accounts/permissions.py`: matriz rol -> acciones.
+- `audit/`: bitácora (`Evento`, solo inserción). `core/`: red, límite de tasa, errores, `constantes.py`, `testing.py` (ayudantes de prueba, no es código de producción).
+- Pruebas junto a cada app (`tests/`); fixtures comunes en `backend/conftest.py`; sin `mock.patch` sobre internos de `services` (usa `sustituir(...)`).
+
+## Nombres
+Dominio en español (usuario, correo, bitácora, candado, rol); infraestructura y utilidades genéricas en inglés (`client_ip`, `check_rate`, `ratelimit`). No renombrar lo existente por esta regla.
+
 ## Reglas
 - Reglas de negocio en la capa de servicios, no en vistas ni serializadores.
 - Toda operación que cambia datos de negocio escribe su Evento en la misma transacción.

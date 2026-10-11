@@ -267,3 +267,21 @@ qué se decidió y por qué; si no te convence, se revierte con el commit que se
   nombres nuevos sin ampliarla (misma línea, mismo archivo). Lo detectó `make ci` (secrets, 5 hallazgos
   en el commit 59f51e0, falsos positivos de parámetros de consulta).
 
+### Fase 2C – Limpieza (sin cambio de comportamiento)
+- **Se quitó `respuesta()`** (vistas de accounts y audit): solo ponía `Cache-Control: no-store`, que
+  `NoStoreApiMiddleware` ya pone a toda respuesta de `/api/` (con pruebas); además `audit` importaba un
+  ayudante de vistas de `accounts`. Las vistas devuelven `Response(...)`.
+- **Constantes en un lugar**: `apps/core/constantes.py` (longitudes de nombre/nómina/correo/contraseña y
+  tamaños de página 25/100) en vez de literales repetidos en modelo, serializadores, servicios, vista
+  de usuarios y bitácora.
+- **`Rol` a nivel de módulo** (con alias `Usuario.Rol`) para que el `CheckConstraint` use `Rol.values`
+  en lugar de repetir la lista; `makemigrations --check`: sin cambios (misma condición en la base).
+- **Código muerto**: se buscaron definiciones sin uso en código de producción; solo quedan ganchos de
+  frameworks (`authenticate_header`, `get_*` de serializadores, esquema OpenAPI) y `create_superuser`,
+  que es una protección probada. Nada que borrar.
+- **Ancla de `query_params.dict()`**: prueba nueva (`?rol=ADMIN&rol=ESPECTADOR` rige el último valor);
+  cambiar a `getlist` será una decisión de producto, no un accidente. 1199 → 1200 pruebas.
+- **Regla de nombres**: dominio en español, infraestructura/utilidades genéricas en inglés; no se
+  renombró nada existente (documentada en `CLAUDE.md`, que también lista la estructura de rutas).
+- **Checklist**: la fila de cobertura decía ≥ 85 %; el umbral real de `make test` es 95 % (ramas) y
+  el README decía 85 %: corregidos.

@@ -6,9 +6,17 @@ from django.db import models
 from django.db.models.functions import Lower
 from django.utils.crypto import salted_hmac
 
+from apps.core.constantes import CORREO_MAX, NOMBRE_MAX, NOMINA_MAX
+
 from .managers import UsuarioManager
 
 SOLO_ASCII = r"^[\x01-\x7f]+$"
+
+
+class Rol(models.TextChoices):
+    ADMIN = "ADMIN", "Administrador"
+    TECNICO = "TECNICO", "Técnico"
+    ESPECTADOR = "ESPECTADOR", "Espectador"
 
 
 class Usuario(AbstractBaseUser):
@@ -19,15 +27,12 @@ class Usuario(AbstractBaseUser):
     administrador activo". `tests/test_admin_lock_rule.py` lo comprueba con ast.
     """
 
-    class Rol(models.TextChoices):
-        ADMIN = "ADMIN", "Administrador"
-        TECNICO = "TECNICO", "Técnico"
-        ESPECTADOR = "ESPECTADOR", "Espectador"
+    Rol = Rol  # alias: `Usuario.Rol` sigue siendo la forma de usarlo
 
-    nombre = models.CharField(max_length=150)
+    nombre = models.CharField(max_length=NOMBRE_MAX)
     # NULL cuando no existe (nunca ""); único cuando tiene valor. Obligatoriedad: ver decisiones.md.
-    numero_nomina = models.CharField(max_length=20, null=True, blank=True)  # noqa: DJ001
-    correo = models.EmailField(max_length=254, unique=True)
+    numero_nomina = models.CharField(max_length=NOMINA_MAX, null=True, blank=True)  # noqa: DJ001
+    correo = models.EmailField(max_length=CORREO_MAX, unique=True)
     rol = models.CharField(max_length=10, choices=Rol.choices)
     activo = models.BooleanField(default=True)
     intentos_fallidos = models.IntegerField(default=0)
@@ -55,7 +60,7 @@ class Usuario(AbstractBaseUser):
                 name="usuario_nomina_unica",
             ),
             models.CheckConstraint(
-                condition=models.Q(rol__in=["ADMIN", "TECNICO", "ESPECTADOR"]),
+                condition=models.Q(rol__in=Rol.values),
                 name="usuario_rol_valido",
             ),
             models.CheckConstraint(
