@@ -2,8 +2,7 @@ import pytest
 from django.contrib.sessions.models import Session
 from django.utils import timezone
 
-from .conftest import CSRF, LOGIN, LOGOUT, ME, Api
-from .factories import DEFAULT_PASSWORD, UsuarioFactory
+from apps.core.testing import CSRF, DEFAULT_PASSWORD, LOGIN, LOGOUT, ME, Api, UsuarioFactory
 
 pytestmark = pytest.mark.django_db
 

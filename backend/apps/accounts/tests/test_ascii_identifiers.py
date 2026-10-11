@@ -9,9 +9,7 @@ import pytest
 
 from apps.accounts import services
 from apps.accounts.models import Usuario
-
-from .conftest import Api
-from .factories import UsuarioFactory
+from apps.core.testing import Api
 
 pytestmark = pytest.mark.django_db
 
@@ -25,16 +23,6 @@ CORREOS_NO_ASCII = [
     "İlker@empresa.test",  # la I turca con punto: .lower() y LOWER() difieren
 ]
 NOMINAS_NO_ASCII = ["Ñ-001", "N-\uff10\uff10\uff11", "N-001é", "N\u200b001"]
-
-
-@pytest.fixture
-def ana(db):
-    return UsuarioFactory(correo="ana@empresa.test", nombre="Ana", rol=Usuario.Rol.ADMIN)
-
-
-@pytest.fixture
-def carla(db):
-    return UsuarioFactory(correo="carla@empresa.test", nombre="Carla")
 
 
 def crear(actor, **extra):

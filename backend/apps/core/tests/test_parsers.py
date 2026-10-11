@@ -2,7 +2,7 @@
 
 import pytest
 
-from apps.accounts.tests.conftest import LOGIN, Api
+from apps.core.testing import LOGIN, Api
 
 pytestmark = pytest.mark.django_db
 

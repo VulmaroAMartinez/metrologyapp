@@ -5,8 +5,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.accounts.models import Usuario
-
-from .factories import DEFAULT_PASSWORD, UsuarioFactory
+from apps.core.testing import DEFAULT_PASSWORD, UsuarioFactory
 
 pytestmark = pytest.mark.django_db
 

@@ -21,11 +21,9 @@ from apps.accounts.models import Usuario
 from apps.audit.models import Evento, TipoEvento
 from apps.audit.sanitize import DatosEventoInvalidosError, sanear, solo_permitidos
 from apps.audit.services import registrar_evento
+from apps.core.testing import DEFAULT_PASSWORD, ME, Api, UsuarioFactory, en_hilo, peticion
 
-from .conftest import ME, Api
-from .factories import DEFAULT_PASSWORD, UsuarioFactory
-from .test_admin_concurrency import en_hilo, peticion
-from .test_sessions_after_commit import limpieza_que_falla, sin_limpieza
+from .ayudantes import limpieza_que_falla, sin_limpieza
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -50,28 +48,18 @@ def version(usuario) -> int:
     return Usuario.objects.get(pk=usuario.pk).sesion_version
 
 
-@pytest.fixture
-def admin_api(usuario, relaxed_rate):
-    return abrir(usuario)
-
-
-@pytest.fixture
-def tecnico(db):
-    return UsuarioFactory(correo="tecnico@empresa.test", nombre="Tec Nico")
-
-
 # --- las sesiones anteriores no reviven -----------------------------------------------------------
 
 
 @LIMPIEZAS
 def test_a_session_from_before_deactivating_and_reactivating_never_revives(
-    limpieza, admin_api, tecnico
+    limpieza, api_ana, tecnico
 ):
     vieja = abrir(tecnico)  # nadie la usa mientras el usuario está desactivado
 
     with limpieza():
-        assert admin_api.post(ruta(tecnico.pk, "desactivar")).status_code == 200
-        assert admin_api.post(ruta(tecnico.pk, "reactivar")).status_code == 200
+        assert api_ana.post(ruta(tecnico.pk, "desactivar")).status_code == 200
+        assert api_ana.post(ruta(tecnico.pk, "reactivar")).status_code == 200
 
     assert vieja.get(ME).status_code == 401
     nueva = abrir(tecnico)  # una sesión creada DESPUÉS es válida...
@@ -81,12 +69,12 @@ def test_a_session_from_before_deactivating_and_reactivating_never_revives(
 
 @LIMPIEZAS
 def test_a_session_from_before_a_reset_gets_401_even_if_the_new_password_is_the_same(
-    limpieza, admin_api, tecnico
+    limpieza, api_ana, tecnico
 ):
     vieja = abrir(tecnico)
 
     with limpieza():
-        respuesta = admin_api.post(
+        respuesta = api_ana.post(
             ruta(tecnico.pk, "restablecer-contrasena"), {"contrasena": DEFAULT_PASSWORD}
         )
 
@@ -96,15 +84,15 @@ def test_a_session_from_before_a_reset_gets_401_even_if_the_new_password_is_the_
 
 
 @LIMPIEZAS
-def test_a_session_created_after_a_reset_stays_valid(limpieza, admin_api, tecnico):
+def test_a_session_created_after_a_reset_stays_valid(limpieza, api_ana, tecnico):
     with limpieza():
-        admin_api.post(ruta(tecnico.pk, "restablecer-contrasena"), {"contrasena": CLAVE_2})
+        api_ana.post(ruta(tecnico.pk, "restablecer-contrasena"), {"contrasena": CLAVE_2})
     nueva = Api()
     assert nueva.login(tecnico.correo, CLAVE_2).status_code == 200
 
-    admin_api.post(ruta(tecnico.pk, "reactivar"))  # operaciones que NO suben la versión
-    admin_api.call("PATCH", f"{BASE}{tecnico.pk}/", {"nombre": "Otro Nombre"})
-    admin_api.post(ruta(tecnico.pk, "cambiar-rol"), {"rol": "ESPECTADOR"})
+    api_ana.post(ruta(tecnico.pk, "reactivar"))  # operaciones que NO suben la versión
+    api_ana.call("PATCH", f"{BASE}{tecnico.pk}/", {"nombre": "Otro Nombre"})
+    api_ana.post(ruta(tecnico.pk, "cambiar-rol"), {"rol": "ESPECTADOR"})
 
     assert nueva.get(ME).status_code == 200
 
@@ -125,10 +113,10 @@ def test_the_session_of_a_login_that_finished_before_the_deactivation_is_dead(us
     assert cliente.get(ME).status_code == 401
 
 
-def test_the_cleanup_that_does_work_still_deletes_the_rows(admin_api, tecnico):
+def test_the_cleanup_that_does_work_still_deletes_the_rows(api_ana, tecnico):
     vieja = abrir(tecnico)
 
-    admin_api.post(ruta(tecnico.pk, "desactivar"))
+    api_ana.post(ruta(tecnico.pk, "desactivar"))
 
     assert not Session.objects.filter(session_key=vieja.session_cookie).exists()
 
@@ -213,16 +201,16 @@ def test_the_fallback_hashes_include_the_version_too(settings):
 # --- nunca se expone ----------------------------------------------------------------------------
 
 
-def test_the_session_version_is_in_no_response_event_or_log(admin_api, tecnico, caplog):
+def test_the_session_version_is_in_no_response_event_or_log(api_ana, tecnico, caplog):
     caplog.set_level(logging.DEBUG)
     respuestas = [
-        admin_api.post(ruta(tecnico.pk, "desactivar")),
-        admin_api.post(ruta(tecnico.pk, "reactivar")),
-        admin_api.post(ruta(tecnico.pk, "restablecer-contrasena"), {"contrasena": CLAVE_2}),
-        admin_api.get(ME),
-        admin_api.get(BASE),
-        admin_api.get(f"{BASE}{tecnico.pk}/"),
-        admin_api.get("/api/v1/bitacora/eventos/?tamano=100"),
+        api_ana.post(ruta(tecnico.pk, "desactivar")),
+        api_ana.post(ruta(tecnico.pk, "reactivar")),
+        api_ana.post(ruta(tecnico.pk, "restablecer-contrasena"), {"contrasena": CLAVE_2}),
+        api_ana.get(ME),
+        api_ana.get(BASE),
+        api_ana.get(f"{BASE}{tecnico.pk}/"),
+        api_ana.get("/api/v1/bitacora/eventos/?tamano=100"),
         Api().login(tecnico.correo, CLAVE_2),
     ]
 

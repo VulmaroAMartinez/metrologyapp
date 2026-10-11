@@ -16,7 +16,7 @@ paths = ['''^graphify-out/''']
 description = "Contraseñas de prueba (constantes de tests)"
 condition = "AND"
 regexTarget = "line"
-paths = ['''backend/.*/tests/.*\.py$''']
+paths = ['''backend/.*/tests/.*\.py$''', '''backend/apps/core/testing\.py$''']
 regexes = ['''(DEFAULT_PASSWORD|SECRET)\s*=\s*"[^"]+"''']
 
 # Falso positivo: pruebas que comprueban que NO se puede ordenar por columnas sensibles.

@@ -21,8 +21,7 @@ from django.test import Client, RequestFactory
 from apps.accounts import locks, services
 from apps.accounts.models import Usuario
 from apps.audit.models import Evento
-
-from .factories import DEFAULT_PASSWORD, UsuarioFactory
+from apps.core.testing import DEFAULT_PASSWORD, UsuarioFactory
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -447,7 +446,7 @@ def test_other_database_errors_propagate_instead_of_asking_to_retry(sqlstate, mu
 def test_the_change_password_view_answers_a_service_error_with_its_own_status(
     usuario, relaxed_rate
 ):
-    from .conftest import CAMBIAR, Api
+    from apps.core.testing import CAMBIAR, Api
 
     api = Api()
     assert api.login(usuario.correo).status_code == 200

@@ -12,10 +12,10 @@ from django.utils import timezone
 
 from apps.accounts import services
 from apps.accounts.models import Usuario
+from apps.core.testing import DEFAULT_PASSWORD, LOGIN, ME, Api, UsuarioFactory
 from config.settings import base
 
-from .conftest import CASOS, LOGIN, ME, Api
-from .factories import DEFAULT_PASSWORD, UsuarioFactory
+from .ayudantes import CASOS
 
 pytestmark = pytest.mark.django_db
 

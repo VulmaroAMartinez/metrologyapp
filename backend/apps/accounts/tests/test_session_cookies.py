@@ -7,8 +7,7 @@ import pytest
 from django.conf import settings
 from django.contrib.sessions.models import Session
 
-from .conftest import CAMBIAR, CSRF, LOGIN, LOGOUT, ME, Api
-from .factories import DEFAULT_PASSWORD
+from apps.core.testing import CAMBIAR, CSRF, DEFAULT_PASSWORD, LOGIN, LOGOUT, ME, Api
 
 pytestmark = pytest.mark.django_db
 

@@ -17,10 +17,9 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import Accion, DenegarPorDefecto, RequiereAccion
+from apps.core.testing import Api, UsuarioFactory
 
-from .conftest import Api
-from .factories import UsuarioFactory
-from .test_permission_matrix import MATRIZ_SECCION_3, ROLES
+from .ayudantes import MATRIZ_SECCION_3, ROLES
 
 pytestmark = pytest.mark.django_db
 

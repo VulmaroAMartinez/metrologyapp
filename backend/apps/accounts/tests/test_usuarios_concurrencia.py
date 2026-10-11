@@ -17,9 +17,7 @@ from django.db import connection
 from apps.accounts import services
 from apps.accounts.models import Usuario
 from apps.audit.models import Evento
-
-from .conftest import Api
-from .factories import UsuarioFactory
+from apps.core.testing import Api, UsuarioFactory
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

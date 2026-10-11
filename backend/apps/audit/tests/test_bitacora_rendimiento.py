@@ -20,9 +20,6 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from apps.accounts.models import Usuario
-from apps.accounts.tests.conftest import Api
-from apps.accounts.tests.factories import UsuarioFactory
 from apps.audit.models import Evento, TipoEvento
 from apps.audit.services import (
     FiltrosEventos,
@@ -30,6 +27,7 @@ from apps.audit.services import (
     construir_consulta,
     consultar_eventos,
 )
+from apps.core.testing import UsuarioFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -170,36 +168,27 @@ def mediana_ms(api, ruta, repeticiones=5):
     return statistics.median(tiempos)
 
 
-@pytest.fixture
-def api_admin(db):
-    admin = UsuarioFactory(correo="admin@empresa.test", rol=Usuario.Rol.ADMIN)
-    api = Api()
-    api.client.force_login(admin)
-    api.csrf()
-    return api
-
-
-def test_response_times_stay_within_the_budget(cien_mil, api_admin):
-    primera = mediana_ms(api_admin, URL)
+def test_response_times_stay_within_the_budget(cien_mil, api_admin_directo):
+    primera = mediana_ms(api_admin_directo, URL)
     desde, hasta = (FIN - timedelta(days=60)).date(), (FIN - timedelta(days=30)).date()
     filtrada = mediana_ms(
-        api_admin, f"{URL}?desde={desde}&hasta={hasta}&tipo=SESION_FALLIDA&tamano=100"
+        api_admin_directo, f"{URL}?desde={desde}&hasta={hasta}&tipo=SESION_FALLIDA&tamano=100"
     )
-    siguiente = api_admin.get(f"{URL}?tamano=100").json()["next"]
+    siguiente = api_admin_directo.get(f"{URL}?tamano=100").json()["next"]
     ruta = f"{urlparse(siguiente).path}?{urlparse(siguiente).query}"
-    profunda = mediana_ms(api_admin, ruta)
+    profunda = mediana_ms(api_admin_directo, ruta)
 
     print(f"\nprimera={primera:.0f} ms, filtrada={filtrada:.0f} ms, con cursor={profunda:.0f} ms")  # noqa: T201
     for nombre, tiempo in (("primera", primera), ("filtrada", filtrada), ("cursor", profunda)):
         assert tiempo < PRESUPUESTO_MS, f"{nombre}: {tiempo:.0f} ms > {PRESUPUESTO_MS} ms"
 
 
-def test_the_whole_log_can_be_walked_in_pages_without_count_or_offset(cien_mil, api_admin):
+def test_the_whole_log_can_be_walked_in_pages_without_count_or_offset(cien_mil, api_admin_directo):
     ruta, paginas, vistos = f"{URL}?tamano=100", 0, 0
     sql = ""
     while ruta and paginas < 12:  # 1 200 eventos bastan para comprobar el patrón de consultas
         with CaptureQueriesContext(connection) as consultas:
-            cuerpo = api_admin.get(ruta).json()
+            cuerpo = api_admin_directo.get(ruta).json()
         sql += " ".join(q["sql"] for q in consultas)
         vistos += len(cuerpo["results"])
         paginas += 1

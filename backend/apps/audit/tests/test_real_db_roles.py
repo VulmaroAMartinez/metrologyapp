@@ -18,14 +18,14 @@ from pathlib import Path
 import pytest
 from psycopg import errors
 
-from apps.core.tests.test_db_roles import connect
+from apps.core.testing import conectar_bd
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 
 
 @pytest.fixture
 def app(roles_db):
-    with closing(connect("app", os.environ["APP_DB_PASSWORD"], roles_db)) as conn:
+    with closing(conectar_bd("app", os.environ["APP_DB_PASSWORD"], roles_db)) as conn:
         yield conn
 
 

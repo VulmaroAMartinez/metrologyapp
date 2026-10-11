@@ -25,28 +25,13 @@ import pytest
 from apps.accounts.models import Usuario
 from apps.accounts.permissions import ACCIONES_POR_ROL, Accion, puede, requiere
 from apps.audit.models import Evento
+from apps.core.testing import Api, UsuarioFactory
 
-from .conftest import Api
-from .factories import UsuarioFactory
+from .ayudantes import MATRIZ_SECCION_3, ROLES
 from .urls_probe import METODOS, ruta_de
 
 pytestmark = [pytest.mark.django_db, pytest.mark.urls("apps.accounts.tests.urls_probe")]
 
-ROLES = ("ADMIN", "TECNICO", "ESPECTADOR")
-
-# acción: (ADMIN, TECNICO, ESPECTADOR)
-MATRIZ_SECCION_3 = {
-    "CONSULTAR": (True, True, True),
-    "GENERAR_REPORTES": (True, True, True),  # §3 los une a la consulta; §7: los 3 roles
-    "ESCRIBIR_INSTRUMENTOS": (True, True, False),
-    "GESTIONAR_AVISOS": (True, True, False),
-    "ELIMINAR_CERTIFICADO": (True, False, False),
-    "VER_BITACORA": (True, False, False),
-    "GESTIONAR_USUARIOS": (True, False, False),
-    "GESTIONAR_CATALOGOS": (True, False, False),
-    "CAMBIAR_PROPIA_CONTRASENA": (True, False, False),  # solo el ADMIN asigna contraseñas
-    "RECIBIR_CORREOS_CADUCIDAD": (True, True, False),
-}
 CASOS = [
     (accion, rol, permitido)
     for accion, columnas in MATRIZ_SECCION_3.items()

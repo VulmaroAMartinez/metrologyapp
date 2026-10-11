@@ -10,6 +10,9 @@ known-first-party = ["apps", "config"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101", "S105", "S106"]
+"**/conftest.py" = ["S101"]
+# Ayudantes de prueba (no es código de producción): contraseña de prueba y asserts.
+"apps/core/testing.py" = ["S101", "S105", "S106"]
 "proxytests/**" = ["S101", "S310"]
 # Migraciones: archivos generados por Django; no se reformatean ni se anotan a mano
 # (RUF012: `dependencies`/`operations` son atributos de clase que Django exige como listas).

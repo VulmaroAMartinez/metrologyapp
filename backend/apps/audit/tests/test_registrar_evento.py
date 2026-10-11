@@ -4,10 +4,10 @@ import pytest
 from django.db import IntegrityError, transaction
 
 from apps.accounts.models import Usuario
-from apps.accounts.tests.factories import UsuarioFactory
 from apps.audit.models import Evento, TipoEvento
 from apps.audit.sanitize import CAMPOS_PERMITIDOS, DatosEventoInvalidosError
 from apps.audit.services import EventoFueraDeTransaccionError, registrar_evento
+from apps.core.testing import UsuarioFactory
 
 pytestmark = pytest.mark.django_db
 

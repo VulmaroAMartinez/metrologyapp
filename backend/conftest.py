@@ -129,3 +129,58 @@ def _medir_cobertura_de_subprocesos(monkeypatch):
         return ejecutar(args, *posicionales, env=env, **opciones)
 
     monkeypatch.setattr(subprocess, "run", run)
+
+
+# --- fixtures comunes a las pruebas de varias apps ----------------------------------------------
+
+
+@pytest.fixture
+def api():
+    """Cliente HTTP con verificación CSRF real (ver apps/core/testing.py)."""
+    from apps.core.testing import Api
+
+    return Api()
+
+
+@pytest.fixture
+def relaxed_rate(settings):
+    """Quita el límite de tasa para probar bloqueo y respuestas sin que estorbe el 429."""
+    settings.LOGIN_RATE_PER_IP_EMAIL = settings.LOGIN_RATE_PER_IP = 1000
+
+
+@pytest.fixture
+def admin(db):
+    from apps.accounts.models import Usuario
+    from apps.core.testing import UsuarioFactory
+
+    return UsuarioFactory(correo="admin@empresa.test", nombre="Admin Uno", rol=Usuario.Rol.ADMIN)
+
+
+@pytest.fixture
+def api_admin(admin, relaxed_rate):
+    """`admin` con la sesión abierta por el login real (deja sus propios eventos)."""
+    from apps.core.testing import Api
+
+    api = Api()
+    assert api.login(admin.correo).status_code == 200
+    return api
+
+
+@pytest.fixture
+def api_admin_directo(admin):
+    """`admin` con la sesión abierta SIN pasar por el login auditado: no deja eventos propios."""
+    from apps.core.testing import sesion_directa
+
+    return sesion_directa(admin)
+
+
+@pytest.fixture
+def real_hasher(settings):
+    """Argon2 de verdad (las pruebas usan MD5 por velocidad) y un hash ficticio recalculado."""
+    from apps.accounts import services
+    from config.settings import base
+
+    settings.PASSWORD_HASHERS = base.PASSWORD_HASHERS
+    services.dummy_hash.cache_clear()
+    yield
+    services.dummy_hash.cache_clear()

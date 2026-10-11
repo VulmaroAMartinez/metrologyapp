@@ -10,8 +10,7 @@ from django.db import IntegrityError, connection, transaction
 
 from apps.accounts import services
 from apps.accounts.models import Usuario
-
-from .factories import UsuarioFactory
+from apps.core.testing import UsuarioFactory
 
 pytestmark = pytest.mark.django_db
 

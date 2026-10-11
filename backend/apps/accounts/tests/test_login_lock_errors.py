@@ -15,8 +15,7 @@ from psycopg import errors
 from apps.accounts import services
 from apps.accounts.models import Usuario
 from apps.audit.models import Evento
-
-from .factories import UsuarioFactory
+from apps.core.testing import UsuarioFactory
 
 CORREO = "ana@empresa.test"
 

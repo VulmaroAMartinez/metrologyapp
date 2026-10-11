@@ -9,31 +9,22 @@ import os
 import uuid
 from contextlib import closing
 
-import psycopg
 import pytest
 from psycopg import errors
 
-
-def connect(user: str, password: str, dbname: str) -> psycopg.Connection:
-    return psycopg.connect(
-        host=os.environ.get("DB_HOST", "db"),
-        dbname=dbname,
-        user=user,
-        password=password,
-        autocommit=True,
-    )
+from apps.core.testing import conectar_bd
 
 
 @pytest.fixture
 def migrator(roles_db):
-    with closing(connect(os.environ["DB_USER"], os.environ["DB_PASSWORD"], roles_db)) as conn:
+    with closing(conectar_bd(os.environ["DB_USER"], os.environ["DB_PASSWORD"], roles_db)) as conn:
         assert conn.execute("SELECT current_user").fetchone()[0] == "migrator"
         yield conn
 
 
 @pytest.fixture
 def app(roles_db):
-    with closing(connect("app", os.environ["APP_DB_PASSWORD"], roles_db)) as conn:
+    with closing(conectar_bd("app", os.environ["APP_DB_PASSWORD"], roles_db)) as conn:
         yield conn
 
 

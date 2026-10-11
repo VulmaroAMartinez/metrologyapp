@@ -17,7 +17,7 @@ Se actualiza al cerrar cada fase. La parte 2 NO está empezada.
 | --- | --- | --- | --- |
 | 0 – Línea base | (sin commit) | verde, 200 s (lint 8, schema 4, audit 14, test 102, test-proxy 61, secrets 11) | hecha |
 | 1 – Pruebas deterministas | `test: pruebas deterministas` | verde, 181 s (lint 4, schema 3, audit 11, test 94, test-proxy 59, secrets 10) | hecha: 10/10 corridas de proxy y 10/10 de límite de tasa; `jq` ausente de la imagen de producción |
-| 2 – Refactor sin cambio de comportamiento | pendiente | pendiente | en curso |
+| 2 – Refactor sin cambio de comportamiento | pendiente | pendiente | en curso: 2A pruebas (hecho), 2B servicios, 2C limpieza |
 | 3 – CI y documentación | pendiente | pendiente | sin empezar |
 | 4 – Modelo de amenazas | pendiente | pendiente | sin empezar |
 

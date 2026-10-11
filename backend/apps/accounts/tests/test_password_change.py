@@ -10,9 +10,7 @@ import pytest
 
 from apps.accounts.models import Usuario
 from apps.audit.models import Evento
-
-from .conftest import CAMBIAR, ME, Api
-from .factories import DEFAULT_PASSWORD, UsuarioFactory
+from apps.core.testing import CAMBIAR, DEFAULT_PASSWORD, ME, Api, UsuarioFactory
 
 pytestmark = [pytest.mark.django_db, pytest.mark.urls("apps.accounts.tests.urls_probe")]
 
@@ -23,13 +21,6 @@ NUEVA = "tornillo-azul-77-nube"
 
 def cambiar(api, actual=DEFAULT_PASSWORD, nueva=NUEVA):
     return api.post(CAMBIAR, {"contrasena_actual": actual, "contrasena_nueva": nueva})
-
-
-@pytest.fixture
-def api_admin(usuario, relaxed_rate):
-    api = Api()
-    assert api.login(usuario.correo).status_code == 200
-    return api
 
 
 # --- solo ADMIN ---
@@ -61,27 +52,27 @@ def test_the_change_endpoint_requires_a_session():
 # --- el cambio ---
 
 
-def test_an_admin_changes_their_own_password(api_admin, usuario):
-    respuesta = cambiar(api_admin)
+def test_an_admin_changes_their_own_password(api_ana, usuario):
+    respuesta = cambiar(api_ana)
 
     assert respuesta.status_code == 200
     assert set(respuesta.json()) == {"id", "nombre", "correo", "rol", "numero_nomina"}
     usuario.refresh_from_db()
     assert usuario.check_password(NUEVA)
     assert not usuario.check_password(DEFAULT_PASSWORD)
-    assert api_admin.get(ME).status_code == 200  # la sesión que cambió la clave sigue vigente
+    assert api_ana.get(ME).status_code == 200  # la sesión que cambió la clave sigue vigente
 
 
-def test_new_password_works_and_the_old_one_does_not(api_admin, usuario):
-    cambiar(api_admin)
-    api_admin.post("/api/v1/auth/logout/")
+def test_new_password_works_and_the_old_one_does_not(api_ana, usuario):
+    cambiar(api_ana)
+    api_ana.post("/api/v1/auth/logout/")
 
     assert Api().login(usuario.correo, DEFAULT_PASSWORD).status_code == 401
     assert Api().login(usuario.correo, NUEVA).status_code == 200
 
 
-def test_the_change_writes_an_event_without_any_password_data(api_admin, usuario):
-    cambiar(api_admin)
+def test_the_change_writes_an_event_without_any_password_data(api_ana, usuario):
+    cambiar(api_ana)
 
     evento = Evento.objects.get(tipo="USUARIO_CONTRASENA_CAMBIADA")
     assert evento.usuario == usuario
@@ -106,8 +97,8 @@ def test_changing_the_password_invalidates_the_other_sessions(usuario, relaxed_r
 # --- validación del cambio ---
 
 
-def test_wrong_current_password_is_rejected(api_admin, usuario):
-    respuesta = cambiar(api_admin, actual="no-es-la-actual-1")
+def test_wrong_current_password_is_rejected(api_ana, usuario):
+    respuesta = cambiar(api_ana, actual="no-es-la-actual-1")
 
     assert respuesta.status_code == 400
     assert respuesta.json()["codigo"] == "datos_invalidos"
@@ -116,8 +107,8 @@ def test_wrong_current_password_is_rejected(api_admin, usuario):
     assert usuario.check_password(DEFAULT_PASSWORD)
 
 
-def test_new_password_must_differ_from_the_current_one(api_admin):
-    respuesta = cambiar(api_admin, nueva=DEFAULT_PASSWORD)
+def test_new_password_must_differ_from_the_current_one(api_ana):
+    respuesta = cambiar(api_ana, nueva=DEFAULT_PASSWORD)
 
     assert respuesta.status_code == 400
     assert respuesta.json()["codigo"] == "datos_invalidos"
@@ -133,8 +124,8 @@ def test_new_password_must_differ_from_the_current_one(api_admin):
         ("anaperez", "muy similar"),
     ],
 )
-def test_new_password_goes_through_the_validators(api_admin, usuario, nueva, fragmento):
-    respuesta = cambiar(api_admin, nueva=nueva)
+def test_new_password_goes_through_the_validators(api_ana, usuario, nueva, fragmento):
+    respuesta = cambiar(api_ana, nueva=nueva)
 
     assert respuesta.status_code == 400
     assert respuesta.json()["codigo"] == "datos_invalidos"
@@ -154,16 +145,16 @@ def test_change_attempts_are_rate_limited(usuario, clock):
 
 
 @pytest.mark.parametrize("cuerpo", [{}, {"contrasena_actual": "x"}, {"contrasena_nueva": "x"}])
-def test_malformed_change_is_400(api_admin, cuerpo):
-    assert api_admin.post(CAMBIAR, cuerpo).status_code == 400
+def test_malformed_change_is_400(api_ana, cuerpo):
+    assert api_ana.post(CAMBIAR, cuerpo).status_code == 400
 
 
-def test_no_password_reaches_the_logs_or_events_during_the_change(api_admin, usuario, caplog):
+def test_no_password_reaches_the_logs_or_events_during_the_change(api_ana, usuario, caplog):
     caplog.set_level(logging.DEBUG)
 
-    cambiar(api_admin, actual="actual-incorrecta-1", nueva="otra-nueva-clave-9")
-    cambiar(api_admin, nueva="qwertyuiop")
-    cambiar(api_admin)
+    cambiar(api_ana, actual="actual-incorrecta-1", nueva="otra-nueva-clave-9")
+    cambiar(api_ana, nueva="qwertyuiop")
+    cambiar(api_ana)
 
     usuario.refresh_from_db()
     eventos = str(list(Evento.objects.values()))
@@ -189,8 +180,8 @@ def test_protected_endpoints_require_a_session():
     assert api.get(PROBE).status_code == 401
 
 
-def test_a_view_without_declared_permissions_is_denied_even_with_a_valid_session(api_admin):
-    respuesta = api_admin.get(SIN_PERMISOS)
+def test_a_view_without_declared_permissions_is_denied_even_with_a_valid_session(api_ana):
+    respuesta = api_ana.get(SIN_PERMISOS)
 
     assert respuesta.status_code == 403
     assert respuesta.json()["codigo"] == "permiso_denegado"

@@ -14,9 +14,9 @@ from psycopg.errors import LockNotAvailable
 from apps.accounts import services
 from apps.accounts.models import Usuario
 from apps.audit.models import Evento
+from apps.core.testing import CAMBIAR, DEFAULT_PASSWORD, LOGIN, Api, UsuarioFactory
 
-from .conftest import CAMBIAR, CASOS, LOGIN, Api
-from .factories import DEFAULT_PASSWORD, UsuarioFactory
+from .ayudantes import CASOS
 
 pytestmark = pytest.mark.django_db
 

@@ -9,9 +9,7 @@ import pytest
 from django.contrib.sessions.models import Session
 
 from apps.audit.models import Evento
-
-from .conftest import CAMBIAR, ME
-from .factories import DEFAULT_PASSWORD
+from apps.core.testing import CAMBIAR, DEFAULT_PASSWORD, ME
 
 pytestmark = pytest.mark.django_db
 

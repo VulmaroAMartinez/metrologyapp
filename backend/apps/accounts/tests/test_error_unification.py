@@ -14,10 +14,9 @@ from rest_framework.exceptions import APIException
 from apps.accounts import services
 from apps.accounts.models import Usuario
 from apps.audit.models import Evento
+from apps.core.testing import DEFAULT_PASSWORD, Api, UsuarioFactory, en_hilo
 
-from .conftest import CASOS, Api
-from .factories import DEFAULT_PASSWORD, UsuarioFactory
-from .test_admin_concurrency import en_hilo
+from .ayudantes import CASOS
 
 BACKEND = Path(__file__).resolve().parents[3]
 BASE = "/api/v1/usuarios/"
@@ -71,13 +70,6 @@ def test_the_views_do_not_catch_business_errors_any_more():
 # --- el sobre {codigo, detalle[, campos]} en los endpoints de administración ------------------
 
 
-@pytest.fixture
-def api_admin(usuario, relaxed_rate):
-    api = Api()
-    assert api.login(usuario.correo).status_code == 200
-    return api
-
-
 def cuerpo(**extra):
     return {
         "nombre": "Luis",
@@ -98,8 +90,8 @@ def cuerpo(**extra):
         ({"numero_nomina": "Ñ-1"}, "numero_nomina"),
     ],
 )
-def test_field_errors_of_the_admin_endpoints_name_their_field(api_admin, extra, campo):
-    respuesta = api_admin.post(BASE, cuerpo(**extra))
+def test_field_errors_of_the_admin_endpoints_name_their_field(api_ana, extra, campo):
+    respuesta = api_ana.post(BASE, cuerpo(**extra))
 
     assert respuesta.status_code == 400
     sobre = respuesta.json()
@@ -109,12 +101,12 @@ def test_field_errors_of_the_admin_endpoints_name_their_field(api_admin, extra, 
     assert all(isinstance(m, str) for m in sobre["campos"][campo])
 
 
-def test_a_business_error_without_a_field_has_no_campos(api_admin):
+def test_a_business_error_without_a_field_has_no_campos(api_ana):
     otra = UsuarioFactory(correo="otra@empresa.test")
-    api_admin.post(BASE, cuerpo())
+    api_ana.post(BASE, cuerpo())
 
-    duplicado = api_admin.post(BASE, cuerpo())
-    inexistente = api_admin.post(f"{BASE}999999/desactivar/")
+    duplicado = api_ana.post(BASE, cuerpo())
+    inexistente = api_ana.post(f"{BASE}999999/desactivar/")
 
     assert (duplicado.status_code, duplicado.json()["codigo"]) == (400, "correo_duplicado")
     assert set(duplicado.json()) == {"codigo", "detalle"}
@@ -122,11 +114,11 @@ def test_a_business_error_without_a_field_has_no_campos(api_admin):
     assert otra.activo
 
 
-def test_cambiar_rol_and_editar_use_the_same_field_shape(api_admin):
+def test_cambiar_rol_and_editar_use_the_same_field_shape(api_ana):
     objetivo = UsuarioFactory(correo="b@empresa.test")
 
-    rol = api_admin.post(f"{BASE}{objetivo.pk}/cambiar-rol/", {"rol": "DIOS"})
-    nombre = api_admin.call("PATCH", f"{BASE}{objetivo.pk}/", {"nombre": "x" * 200})
+    rol = api_ana.post(f"{BASE}{objetivo.pk}/cambiar-rol/", {"rol": "DIOS"})
+    nombre = api_ana.call("PATCH", f"{BASE}{objetivo.pk}/", {"nombre": "x" * 200})
 
     for respuesta, campo in ((rol, "rol"), (nombre, "nombre")):
         assert respuesta.status_code == 400

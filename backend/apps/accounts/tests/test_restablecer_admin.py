@@ -11,18 +11,11 @@ from django.utils import timezone
 from apps.accounts import services
 from apps.accounts.models import Usuario
 from apps.audit.models import Evento
-
-from .conftest import ME, Api
-from .factories import DEFAULT_PASSWORD, UsuarioFactory
+from apps.core.testing import DEFAULT_PASSWORD, ME, Api, UsuarioFactory
 
 pytestmark = pytest.mark.django_db
 
 NUEVA = "tornillo-azul-77-nube"
-
-
-@pytest.fixture
-def admin(db):
-    return UsuarioFactory(correo="admin@empresa.test", nombre="Admin Uno", rol=Usuario.Rol.ADMIN)
 
 
 def ejecutar(correo, claves=(NUEVA, NUEVA)):

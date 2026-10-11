@@ -114,7 +114,7 @@ def test_the_interactive_path_prints_no_warning_and_no_password(monkeypatch, cap
 
 
 def test_the_created_admin_logs_in_straight_away_without_a_forced_change(monkeypatch):
-    from apps.accounts.tests.conftest import Api
+    from apps.core.testing import Api
 
     monkeypatch.setenv(VARIABLE_CONTRASENA, CLAVE)
     ejecutar("--correo", "raiz@empresa.test", "--nombre", "Raíz")

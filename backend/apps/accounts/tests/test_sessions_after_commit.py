@@ -13,9 +13,7 @@ from django.contrib.sessions.models import Session
 
 from apps.accounts import services
 from apps.audit.models import Evento
-
-from .conftest import CAMBIAR, ME, Api
-from .factories import DEFAULT_PASSWORD, UsuarioFactory
+from apps.core.testing import CAMBIAR, DEFAULT_PASSWORD, ME, Api, UsuarioFactory
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -33,16 +31,6 @@ def abrir(usuario):
     return api
 
 
-@pytest.fixture
-def admin_api(usuario, relaxed_rate):
-    return abrir(usuario)
-
-
-@pytest.fixture
-def tecnico(db):
-    return UsuarioFactory(correo="tecnico@empresa.test", nombre="Tec Nico")
-
-
 def sin_limpieza():
     return mock.patch.object(services, "invalidar_sesiones", return_value=0)
 
@@ -55,13 +43,13 @@ def limpieza_que_falla():
 
 @pytest.mark.parametrize("limpieza", [sin_limpieza, limpieza_que_falla], ids=["apagada", "falla"])
 def test_a_deactivated_users_old_session_gets_401_even_without_the_cleanup(
-    limpieza, admin_api, tecnico, relaxed_rate
+    limpieza, api_ana, tecnico, relaxed_rate
 ):
     sesion = abrir(tecnico)
     assert sesion.get(ME).status_code == 200
 
     with limpieza():
-        respuesta = admin_api.post(ruta(tecnico.pk, "desactivar"))
+        respuesta = api_ana.post(ruta(tecnico.pk, "desactivar"))
 
     assert respuesta.status_code == 200  # un fallo de la limpieza no tumba la operación
     siguiente = sesion.get(ME)
@@ -73,13 +61,13 @@ def test_a_deactivated_users_old_session_gets_401_even_without_the_cleanup(
 
 @pytest.mark.parametrize("limpieza", [sin_limpieza, limpieza_que_falla], ids=["apagada", "falla"])
 def test_a_reset_users_old_session_gets_401_even_without_the_cleanup(
-    limpieza, admin_api, tecnico, relaxed_rate
+    limpieza, api_ana, tecnico, relaxed_rate
 ):
     sesion = abrir(tecnico)
     assert sesion.get(ME).status_code == 200
 
     with limpieza():
-        respuesta = admin_api.post(
+        respuesta = api_ana.post(
             ruta(tecnico.pk, "restablecer-contrasena"), {"contrasena": CLAVE_2}
         )
 
@@ -103,12 +91,12 @@ def test_the_other_sessions_of_an_admin_who_changes_their_password_get_401(usuar
     assert desde_la_que_cambia.get(ME).status_code == 200  # la actual se conserva
 
 
-def test_a_failing_cleanup_is_logged_without_sensitive_data(admin_api, tecnico, caplog):
+def test_a_failing_cleanup_is_logged_without_sensitive_data(api_ana, tecnico, caplog):
     sesion = abrir(tecnico)
     caplog.set_level(logging.DEBUG)
 
     with limpieza_que_falla():
-        respuesta = admin_api.post(
+        respuesta = api_ana.post(
             ruta(tecnico.pk, "restablecer-contrasena"), {"contrasena": CLAVE_2}
         )
 
@@ -129,12 +117,12 @@ def test_a_failing_cleanup_is_logged_without_sensitive_data(admin_api, tecnico, 
         assert sensible not in texto_completo, sensible
 
 
-def test_the_real_on_commit_callback_deletes_the_targets_session_rows(admin_api, tecnico):
+def test_the_real_on_commit_callback_deletes_the_targets_session_rows(api_ana, tecnico):
     uno, dos = abrir(tecnico), abrir(tecnico)
     ajena = abrir(UsuarioFactory(correo="otra@empresa.test"))
     assert Session.objects.count() == 4  # la del administrador, dos del técnico y una ajena
 
-    admin_api.post(ruta(tecnico.pk, "desactivar"))
+    api_ana.post(ruta(tecnico.pk, "desactivar"))
 
     quedan = set(Session.objects.values_list("session_key", flat=True))
     assert uno.session_cookie not in quedan
@@ -166,15 +154,15 @@ def test_a_failed_operation_closes_no_session(operacion, usuario, tecnico, relax
     assert sesion.get(ME).status_code == 200  # nada cambió: la sesión sigue valiendo
 
 
-def test_reactivating_closes_the_stale_sessions_a_failed_cleanup_left_behind(admin_api, tecnico):
+def test_reactivating_closes_the_stale_sessions_a_failed_cleanup_left_behind(api_ana, tecnico):
     """La fila que un borrado fallido dejó se limpia al reactivar (solo limpieza: la sesión ya
     era inválida por `sesion_version`, ver test_session_version.py)."""
     sesion = abrir(tecnico)
     with limpieza_que_falla():
-        admin_api.post(ruta(tecnico.pk, "desactivar"))
+        api_ana.post(ruta(tecnico.pk, "desactivar"))
     assert Session.objects.filter(session_key=sesion.session_cookie).exists()  # quedó la fila
 
-    admin_api.post(ruta(tecnico.pk, "reactivar"))  # esta vez la limpieza funciona
+    api_ana.post(ruta(tecnico.pk, "reactivar"))  # esta vez la limpieza funciona
 
     assert not Session.objects.filter(session_key=sesion.session_cookie).exists()
     assert sesion.get(ME).status_code == 401  # no revive

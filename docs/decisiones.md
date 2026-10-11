@@ -223,3 +223,26 @@ qué se decidió y por qué; si no te convence, se revierte con el commit que se
 - **`jq` solo en la etapa `test` de la imagen**: se comprobó en la imagen de producción
   (`docker history`: 0 menciones; `dpkg -l`: sin `jq` ni `libjq`; sin `/usr/bin/jq`) y se fijó con
   una prueba que analiza el `Dockerfile` por etapas (`test_jq_is_installed_only_in_the_test_stage_of_the_image`).
+
+### Fase 2 – Refactor sin cambio de comportamiento
+- **Pruebas: ayudantes y fixtures compartidos** (`refactor: pruebas con ayudantes compartidos`).
+  `apps/core/testing.py` (no es código de producción) reúne lo que usan varias apps: `Api`, las rutas
+  de autenticación, `UsuarioFactory`, `DEFAULT_PASSWORD`, `sesion_directa`, `peticion`, las
+  herramientas de hilos (`en_hilo`, `Retencion`, `esperar_bloqueo`) y `conectar_bd`. Las fixtures
+  comunes (`api`, `relaxed_rate`, `admin`, `api_admin`, `api_admin_directo`, `real_hasher`) están en
+  el `conftest.py` raíz; las propias de accounts (`usuario`, `ana`, `beto`, `carla`, `tecnico`,
+  `api_ana`, `cuentas`) en `apps/accounts/tests/conftest.py`, y las constantes y funciones que
+  comparten varios archivos de accounts en `apps/accounts/tests/ayudantes.py`. **Ninguna app importa
+  del `conftest.py` de otra ni de módulos de prueba de otra** (antes: 3 importaciones cruzadas).
+- **Duplicados eliminados**: `relaxed_rate` (×2), `admin` (×3), `api_admin` (×5, de dos clases
+  distintas: login real y sesión directa; ahora `api_admin` y `api_admin_directo`), `tecnico` (×2),
+  `ana`/`beto`/`carla` (×2), `real_hasher` (×3), `admin_api` (×2, ahora `api_ana`), `connect` y
+  `instantanea` (×2).
+- **Archivos de más de 600 líneas partidos por endpoint o servicio**: `test_usuarios_api.py` (795)
+  → `test_usuarios_api_{listar,crear_editar,acciones,seguridad}.py` y `test_usuarios_services.py`
+  (710) → `test_usuarios_servicios_{crear_editar,eventos,reglas,sesiones_y_fugas}.py`. Ninguna prueba
+  se tocó: solo se movió texto. **Antes: 1199 pruebas recogidas; después: 1199**, y el multiconjunto de
+  nombres con sus parámetros es idéntico (`pytest --collect-only` comparado con `diff`).
+- **Ruff**: `apps/core/testing.py` y `conftest.py` quedan exentos de `S101`/`S105`/`S106` (son
+  ayudantes de prueba) en `pyproject.toml`.
+

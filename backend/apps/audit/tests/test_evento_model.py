@@ -3,8 +3,8 @@ from django.db import IntegrityError, connection, transaction
 from django.db.models import ProtectedError
 from django.utils import timezone
 
-from apps.accounts.tests.factories import UsuarioFactory
 from apps.audit.models import Evento, EventoInmutableError, TipoEvento
+from apps.core.testing import UsuarioFactory
 
 pytestmark = pytest.mark.django_db
 
