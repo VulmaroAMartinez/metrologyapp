@@ -105,6 +105,7 @@ services:
       - ../Makefile:/opt/test/Makefile:ro
       - ../.gitignore:/opt/test/.gitignore:ro
       - ../deploy:/opt/test/deploy:ro # pruebas de las redes del compose y de proxytest.sh
+      - ../.github:/opt/test/.github:ro # pruebas del flujo de CI y de dependabot
       - ../.claude/hooks:/opt/test/hooks:ro # pruebas del hook de archivos protegidos
     depends_on:
       db: {condition: service_healthy}

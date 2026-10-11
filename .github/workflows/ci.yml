@@ -1,0 +1,99 @@
+# Integración continua. Equivale a `make ci`, repartido en trabajos paralelos.
+# Sin secretos: todo corre con los valores de ejemplo de .env.example (el Makefile crea .env).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  calidad:
+    name: lint, auditoría y secretos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks revisa todo el historial
+          persist-credentials: false
+      - name: Caché de imágenes base
+        id: imagenes
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/imagenes-docker
+          key: imagenes-${{ hashFiles('deploy/docker-compose*.yml', 'backend/Dockerfile', 'frontend/Dockerfile', 'Makefile') }}
+      - name: Cargar imágenes en caché
+        if: steps.imagenes.outputs.cache-hit == 'true'
+        run: for f in ~/imagenes-docker/*.tar; do docker load -i "$f"; done
+      - run: make lint
+      - run: make audit
+      - run: make secrets
+      - name: Guardar imágenes base para la caché
+        if: steps.imagenes.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/imagenes-docker
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(postgres|caddy|zricethezav/gitleaks|python|node)' | while read -r i; do
+            docker save "$i" -o ~/imagenes-docker/"$(echo "$i" | tr '/:' '__')".tar
+          done
+
+  pruebas:
+    name: pruebas (pytest, cobertura 95 %)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Caché de imágenes base
+        id: imagenes
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/imagenes-docker
+          key: imagenes-${{ hashFiles('deploy/docker-compose*.yml', 'backend/Dockerfile', 'frontend/Dockerfile', 'Makefile') }}
+      - name: Cargar imágenes en caché
+        if: steps.imagenes.outputs.cache-hit == 'true'
+        run: for f in ~/imagenes-docker/*.tar; do docker load -i "$f"; done
+      - run: make test
+      - name: Guardar imágenes base para la caché
+        if: steps.imagenes.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/imagenes-docker
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(postgres|caddy|zricethezav/gitleaks|python|node)' | while read -r i; do
+            docker save "$i" -o ~/imagenes-docker/"$(echo "$i" | tr '/:' '__')".tar
+          done
+
+  proxy-y-esquema:
+    name: pruebas de proxy y esquema OpenAPI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Caché de imágenes base
+        id: imagenes
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/imagenes-docker
+          key: imagenes-${{ hashFiles('deploy/docker-compose*.yml', 'backend/Dockerfile', 'frontend/Dockerfile', 'Makefile') }}
+      - name: Cargar imágenes en caché
+        if: steps.imagenes.outputs.cache-hit == 'true'
+        run: for f in ~/imagenes-docker/*.tar; do docker load -i "$f"; done
+      - run: make schema
+      - run: make test-proxy
+      - name: Guardar imágenes base para la caché
+        if: steps.imagenes.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/imagenes-docker
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(postgres|caddy|zricethezav/gitleaks|python|node)' | while read -r i; do
+            docker save "$i" -o ~/imagenes-docker/"$(echo "$i" | tr '/:' '__')".tar
+          done
