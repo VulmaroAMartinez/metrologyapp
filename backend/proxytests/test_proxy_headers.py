@@ -11,6 +11,8 @@ import re
 import uuid
 from urllib.parse import urlparse
 
+from ventana import esperar_si_la_ventana_esta_por_terminar
+
 BASE = urlparse(os.environ["PROXY_BASE_URL"])
 CSRF_PATH = "/api/v1/auth/csrf/"
 LOGIN_PATH = "/api/v1/auth/login/"
@@ -52,6 +54,7 @@ def login_attempt(correo, extra_headers=None):
 
 
 def test_forged_forwarded_headers_do_not_evade_the_per_ip_and_email_limit():
+    esperar_si_la_ventana_esta_por_terminar(necesario=10)  # 8 intentos: ~2 s
     correo = f"{uuid.uuid4().hex[:12]}@empresa.test"
     estados = []
     ultimo = None
@@ -73,6 +76,7 @@ def test_forged_forwarded_headers_do_not_evade_the_per_ip_and_email_limit():
 
 
 def test_forged_headers_do_not_evade_the_per_ip_limit_across_many_emails():
+    esperar_si_la_ventana_esta_por_terminar(necesario=25)  # 60 intentos: ~10 s
     estados = [
         login_attempt(
             f"{uuid.uuid4().hex[:12]}@empresa.test",
@@ -83,12 +87,14 @@ def test_forged_headers_do_not_evade_the_per_ip_limit_across_many_emails():
 
     assert 429 in estados, "el límite por IP sola nunca se activó"
     # El stack de prueba fija LOGIN_RATE_PER_IP=40 por minuto (docker-compose.proxytest.yml), menos
-    # lo que ya gastaron las demás pruebas en la misma ventana.
+    # lo que ya gastaron las demás pruebas en la misma ventana. Sin cambio de ventana a mitad de la
+    # prueba (esperar_si_la_ventana_esta_por_terminar), el 429 llega como tarde en el intento 41.
     assert estados.index(429) <= 40
     assert set(estados) <= {401, 429}
 
 
 def test_failed_logins_look_identical_for_known_and_unknown_emails_through_the_proxy():
+    esperar_si_la_ventana_esta_por_terminar(necesario=3)
     status_a, _, _, body_a = login_attempt(f"{uuid.uuid4().hex[:12]}@empresa.test")
 
     assert status_a in {401, 429}

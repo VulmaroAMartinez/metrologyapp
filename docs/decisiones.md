@@ -197,3 +197,29 @@ Lista consolidada del sprint 1; `DEFINICION.md` no se editó.
 - 8 (política de contraseñas, bloqueo, inactividad): quedan los valores provisionales.
 - 9 (restablecer contraseña): resuelto — solo el administrador asigna y restablece contraseñas (las escribe él, sin reautenticación); no hay contraseñas temporales ni cambio forzado.
 - 10 (idioma de los identificadores): resuelto — dominio en español como en la definición; código técnico en inglés.
+
+## Decisiones tomadas por Claude Code (revisar)
+Decisiones que tomé en el modo autónomo sin consultarte, para que las revises. Cada una dice
+qué se decidió y por qué; si no te convence, se revierte con el commit que se indica.
+
+### Fase 1 – Pruebas deterministas
+- **Pruebas de límite de tasa contra el stack real: se alinea la ventana, no se toca el servidor.**
+  El límite cuenta en ventanas fijas de 60 s alineadas al reloj; el servidor del stack real no se
+  puede congelar, y cambiar el código de producción para facilitar una prueba habría sido peor. Las
+  pruebas que cuentan 429 (`proxytests/test_proxy_headers.py`) llaman a
+  `esperar_si_la_ventana_esta_por_terminar(necesario=N)` (`proxytests/ventana.py`): si quedan menos
+  de N segundos en la ventana actual, esperan a la siguiente (como mucho N segundos). Costo: una
+  espera ocasional de hasta ~25 s en `make test-proxy`. Una prueba estática
+  (`proxytests/test_ventana_de_tasa.py`) falla si una prueba que menciona 429 no la llama.
+- **Las pruebas dentro de la aplicación ya usaban el reloj controlado** (`clock`), salvo
+  `test_counter_is_shared_and_atomic_across_connections` (ventanas de 3600 s: un cambio de hora a
+  mitad de la prueba la partía); ahora usa `clock`.
+- **`make test-proxy` acepta `PROXYTEST_REPETIR=N` y `PROXYTEST_PYTEST_ARGS`** para repetir las
+  pruebas sobre el mismo stack. Entre repeticiones espera al comienzo de la siguiente ventana,
+  porque cada corrida agota el límite por IP (sin esa espera la corrida 2 fallaba: se vio).
+- **Resultado**: 10 corridas seguidas de las 16 pruebas de proxy en verde (612 s en total, la
+  mayor parte esperas entre ventanas) y 10 corridas seguidas de las 77 pruebas de límite de tasa de
+  la aplicación.
+- **`jq` solo en la etapa `test` de la imagen**: se comprobó en la imagen de producción
+  (`docker history`: 0 menciones; `dpkg -l`: sin `jq` ni `libjq`; sin `/usr/bin/jq`) y se fijó con
+  una prueba que analiza el `Dockerfile` por etapas (`test_jq_is_installed_only_in_the_test_stage_of_the_image`).

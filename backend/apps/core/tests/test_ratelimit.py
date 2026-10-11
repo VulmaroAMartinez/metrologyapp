@@ -49,8 +49,9 @@ def test_zero_limit_always_blocks(clock):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_counter_is_shared_and_atomic_across_connections():
-    """20 hilos (cada uno con su conexión, como los workers) compiten por 5 ranuras."""
+def test_counter_is_shared_and_atomic_across_connections(clock):
+    """20 hilos (cada uno con su conexión, como los workers) compiten por 5 ranuras. Reloj
+    controlado: con el reloj real, un cambio de hora a mitad de la prueba partiría la ventana."""
 
     def attempt(_):
         try:

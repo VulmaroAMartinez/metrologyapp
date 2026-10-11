@@ -143,3 +143,29 @@ def test_the_makefile_has_no_double_slash_path_workarounds():
     texto = MAKEFILE.read_text(encoding="utf-8")
 
     assert not re.search(r"(-w|=|\s)//[a-z]", texto), "quedan rutas con // (solución a medias)"
+
+
+# --- jq solo en la etapa de pruebas de la imagen ---------------------------------------------
+
+DOCKERFILE = Path(__file__).resolve().parents[2] / "Dockerfile"
+
+
+def instrucciones_por_etapa() -> dict[str, list[str]]:
+    etapas: dict[str, list[str]] = {}
+    actual = ""
+    for linea in DOCKERFILE.read_text(encoding="utf-8").splitlines():
+        etapa = re.match(r"FROM .* AS (\w+)", linea)
+        if etapa:
+            actual = etapa.group(1)
+        if not linea.lstrip().startswith("#"):
+            etapas.setdefault(actual, []).append(linea)
+    return etapas
+
+
+def test_jq_is_installed_only_in_the_test_stage_of_the_image():
+    etapas = instrucciones_por_etapa()
+
+    con_jq = {nombre for nombre, lineas in etapas.items() if any("jq" in ln for ln in lineas)}
+
+    assert set(etapas) == {"base", "test", "runtime"}
+    assert con_jq == {"test"}

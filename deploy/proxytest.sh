@@ -36,7 +36,24 @@ CREAR_ADMIN_CONTRASENA="$ADMIN_CLAVE" $COMPOSE --profile tools run --rm --no-dep
   python manage.py crear_admin --correo "$ADMIN_CORREO" --nombre "Admin Proxytest"
 $COMPOSE up -d --build --wait
 sh deploy/verificar_contenedores.sh metrologia-proxytest
-PROXYTEST_ADMIN_CONTRASENA="$ADMIN_CLAVE" $COMPOSE --profile tools run --rm --build --no-deps \
-  -e PROXY_BASE_URL=http://proxy:8080 -e PROXYTEST_ADMIN_CORREO="$ADMIN_CORREO" \
-  -e PROXYTEST_ADMIN_CONTRASENA test \
-  pytest --ds=config.settings.test -p no:cacheprovider -o addopts="" -v proxytests
+# PROXYTEST_REPETIR=10 repite las pruebas sobre el MISMO stack (para comprobar que no son
+# intermitentes); PROXYTEST_PYTEST_ARGS="-k forged" las filtra. Se detiene en la primera falla.
+CORRIDAS=${PROXYTEST_REPETIR:-1}
+corrida=1
+while [ "$corrida" -le "$CORRIDAS" ]; do
+  echo "== proxytests: corrida $corrida de $CORRIDAS"
+  # shellcheck disable=SC2086
+  PROXYTEST_ADMIN_CONTRASENA="$ADMIN_CLAVE" $COMPOSE --profile tools run --rm --build --no-deps \
+    -e PROXY_BASE_URL=http://proxy:8080 -e PROXYTEST_ADMIN_CORREO="$ADMIN_CORREO" \
+    -e PROXYTEST_ADMIN_CONTRASENA test \
+    pytest --ds=config.settings.test -p no:cacheprovider -o addopts="" -v proxytests \
+    ${PROXYTEST_PYTEST_ARGS:-}
+  if [ "$corrida" -lt "$CORRIDAS" ]; then
+    # Cada corrida agota el límite por IP (ventana fija de 60 s): la siguiente empieza en una
+    # ventana nueva, igual que una corrida única de `make test-proxy`.
+    espera=$((61 - $(date +%s) % 60))
+    echo "== esperando ${espera}s al comienzo de la ventana siguiente"
+    sleep "$espera"
+  fi
+  corrida=$((corrida + 1))
+done
