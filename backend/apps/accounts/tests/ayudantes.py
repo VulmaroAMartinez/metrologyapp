@@ -5,12 +5,17 @@ en `apps/core/testing.py`; esto es solo de accounts.)
 """
 
 import json
+import threading
+from contextlib import contextmanager
 from unittest import mock
+
+from django.contrib.auth.hashers import check_password
 
 from apps.accounts import services
 from apps.accounts.models import Usuario
+from apps.accounts.services import autenticacion, usuarios
 from apps.audit.models import Evento
-from apps.core.testing import DEFAULT_PASSWORD, Api
+from apps.core.testing import DEFAULT_PASSWORD, TOPE, Api
 
 ROLES = ("ADMIN", "TECNICO", "ESPECTADOR")
 
@@ -38,14 +43,71 @@ CASOS = {
 }
 
 
+# --- puntos de inyección (en vez de mock.patch sobre atributos internos de services) ----------
+
+
+def lanza(excepcion):
+    """Función que lanza `excepcion` cuando se la llama (para sustituir un punto de inyección)."""
+
+    def _lanzar(*args, **kwargs):
+        raise excepcion
+
+    return _lanzar
+
+
+@contextmanager
+def evento_que_falla(error=None):
+    """El registro de eventos (de las operaciones de usuarios Y del login) lanza un error."""
+    error = error or RuntimeError("falla")
+    with (
+        usuarios.sustituir(registrar_evento=lanza(error)),
+        autenticacion.sustituir(registrar_evento=lanza(error)),
+    ):
+        yield
+
+
+def sin_comprobar_duplicados():
+    """Simula que dos envíos simultáneos pasan la comprobación previa de duplicados."""
+    return usuarios.sustituir(verificar_duplicados=lambda *args, **kwargs: None)
+
+
 def sin_limpieza():
-    return mock.patch.object(services, "invalidar_sesiones", return_value=0)
+    """El borrado de sesiones (limpieza posterior al commit) no hace nada."""
+    return usuarios.sustituir(cerrar_sesiones=lambda usuario_pk: 0)
 
 
 def limpieza_que_falla():
-    return mock.patch.object(
-        services, "invalidar_sesiones", side_effect=RuntimeError("detalle-interno-xyz")
-    )
+    return usuarios.sustituir(cerrar_sesiones=lanza(RuntimeError("detalle-interno-xyz")))
+
+
+@contextmanager
+def espiar_hash():
+    """Cuenta las verificaciones de hash del login (`call_count`, `call_args`) sin cambiarlas."""
+    espia = mock.Mock(wraps=check_password)
+    with autenticacion.sustituir(verificar_hash=espia):
+        yield espia
+
+
+@contextmanager
+def retener(punto, hilo, retencion, *, despues=False, modulo=usuarios):
+    """Detiene al hilo `hilo` en el punto de inyección `punto` de `modulo` (antes de llamarlo, o
+    después con `despues`). Los demás hilos pasan sin esperar."""
+    real = getattr(modulo.puntos, punto)
+
+    def envoltura(*args, **kwargs):
+        if threading.current_thread().name != hilo:
+            return real(*args, **kwargs)
+        if not despues:
+            retencion.dentro.set()
+            assert retencion.seguir.wait(TOPE)
+        resultado = real(*args, **kwargs)
+        if despues:
+            retencion.dentro.set()
+            assert retencion.seguir.wait(TOPE)
+        return resultado
+
+    with modulo.sustituir(**{punto: envoltura}):
+        yield
 
 
 # --- gestión de usuarios: constantes y ayudantes de varias pruebas ------------------------------

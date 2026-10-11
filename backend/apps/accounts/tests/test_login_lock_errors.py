@@ -6,16 +6,18 @@ deadlocks o timeouts detrás de un 401 que parecería una credencial incorrecta.
 
 import threading
 import time
-from unittest import mock
 
 import pytest
+from django.contrib.auth.hashers import check_password
 from django.db import OperationalError
 from psycopg import errors
 
-from apps.accounts import services
-from apps.accounts.models import Usuario
+from apps.accounts import locks, services
+from apps.accounts.services import autenticacion
 from apps.audit.models import Evento
 from apps.core.testing import UsuarioFactory
+
+from .ayudantes import lanza
 
 CORREO = "ana@empresa.test"
 
@@ -27,7 +29,7 @@ def operational(causa):
 
 
 def test_sqlstate_constant_is_postgres_lock_not_available():
-    assert services.SQLSTATE_LOCK_NOT_AVAILABLE == "55P03"
+    assert locks.SQLSTATE_LOCK_NOT_AVAILABLE == "55P03"
     assert errors.LockNotAvailable.sqlstate == "55P03"
 
 
@@ -48,7 +50,7 @@ def test_sqlstate_constant_is_postgres_lock_not_available():
 )
 def test_any_other_operational_error_propagates(causa, usuario_ana):
     with (
-        mock.patch.object(Usuario.objects, "select_for_update", side_effect=operational(causa)),
+        autenticacion.sustituir(obtener_usuario_bloqueado=lanza(operational(causa))),
         pytest.raises(OperationalError, match="fallo de base de datos"),
     ):
         services.iniciar_sesion(None, CORREO, "lo-que-sea-1")
@@ -61,7 +63,7 @@ def test_non_operational_database_errors_also_propagate(usuario_ana):
     from django.db import ProgrammingError
 
     with (
-        mock.patch.object(Usuario.objects, "select_for_update", side_effect=ProgrammingError("x")),
+        autenticacion.sustituir(obtener_usuario_bloqueado=lanza(ProgrammingError("x"))),
         pytest.raises(ProgrammingError),
     ):
         services.iniciar_sesion(None, CORREO, "lo-que-sea-1")
@@ -72,9 +74,7 @@ def test_the_lock_error_is_recognized_by_its_sqlstate_alone(usuario_ana):
     class ConSqlstate(Exception):
         sqlstate = "55P03"
 
-    with mock.patch.object(
-        Usuario.objects, "select_for_update", side_effect=operational(ConSqlstate())
-    ):
+    with autenticacion.sustituir(obtener_usuario_bloqueado=lanza(operational(ConSqlstate()))):
         resultado = services.iniciar_sesion(None, CORREO, "lo-que-sea-1")
 
     assert resultado.motivo == services.MotivoFallo.INTENTO_SIMULTANEO
@@ -91,7 +91,7 @@ def test_a_real_postgres_row_lock_raises_55P03_and_is_handled_without_waiting():
     """
     usuario = UsuarioFactory(correo=CORREO)
     dentro_del_candado = threading.Event()
-    real = services.check_password
+    real = check_password
     primero = {}
 
     def verificacion(contrasena, encoded):
@@ -108,7 +108,7 @@ def test_a_real_postgres_row_lock_raises_55P03_and_is_handled_without_waiting():
         finally:
             connection.close()
 
-    with mock.patch.object(services, "check_password", side_effect=verificacion):
+    with autenticacion.sustituir(verificar_hash=verificacion):
         primero["hilo"] = threading.Thread(target=login_lento)
         primero["hilo"].start()
         assert dentro_del_candado.wait(timeout=10)

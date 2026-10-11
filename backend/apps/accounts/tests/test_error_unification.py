@@ -140,13 +140,13 @@ def test_a_failed_login_returns_a_result_and_never_raises(caso, cuentas, relaxed
 
 
 def test_iniciar_sesion_has_no_raise_of_business_errors():
-    arbol = ast.parse((BACKEND / "apps/accounts/services.py").read_text(encoding="utf-8"))
-    funcion = next(
-        n for n in ast.walk(arbol) if isinstance(n, ast.FunctionDef) and n.name == "iniciar_sesion"
+    arbol = ast.parse(
+        (BACKEND / "apps/accounts/services/autenticacion.py").read_text(encoding="utf-8")
     )
-    lanzamientos = [n for n in ast.walk(funcion) if isinstance(n, ast.Raise)]
+    # En todo el módulo de login solo hay un `raise`: el pelado que reenvía los errores de base de
+    # datos que no son de candado. Ningún error de negocio se lanza desde el login.
+    lanzamientos = [n for n in ast.walk(arbol) if isinstance(n, ast.Raise)]
 
-    # Solo el `raise` pelado que reenvía errores de base de datos que no son de candado.
     assert [n.exc for n in lanzamientos] == [None]
 
 

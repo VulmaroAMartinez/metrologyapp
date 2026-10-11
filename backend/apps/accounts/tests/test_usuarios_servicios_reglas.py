@@ -66,11 +66,11 @@ def test_an_admin_can_demote_and_deactivate_another_admin(ana, beto):
 
 def test_the_last_active_admin_invariant(ana, beto):
     with pytest.raises(services.UltimoAdministrador) as error:
-        services._garantizar_administrador_restante([ana], ana.pk)
+        services.usuarios._garantizar_administrador_restante([ana], ana.pk)
     assert error.value.codigo == "ultimo_administrador"
     assert error.value.estado == 409
 
-    services._garantizar_administrador_restante([ana, beto], ana.pk)  # queda beto
+    services.usuarios._garantizar_administrador_restante([ana, beto], ana.pk)  # queda beto
 
 
 @pytest.mark.parametrize("operacion", sorted(OPERACIONES))

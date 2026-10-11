@@ -6,7 +6,6 @@ transacciones reales (`transaction=True`) para que los callbacks de on_commit se
 """
 
 import logging
-from unittest import mock
 
 import pytest
 from django.contrib.sessions.models import Session
@@ -14,6 +13,8 @@ from django.contrib.sessions.models import Session
 from apps.accounts import services
 from apps.audit.models import Evento
 from apps.core.testing import CAMBIAR, DEFAULT_PASSWORD, ME, Api, UsuarioFactory
+
+from .ayudantes import evento_que_falla, limpieza_que_falla, sin_limpieza
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -29,16 +30,6 @@ def abrir(usuario):
     api = Api()
     assert api.login(usuario.correo).status_code == 200
     return api
-
-
-def sin_limpieza():
-    return mock.patch.object(services, "invalidar_sesiones", return_value=0)
-
-
-def limpieza_que_falla():
-    return mock.patch.object(
-        services, "invalidar_sesiones", side_effect=RuntimeError("detalle-interno-xyz")
-    )
 
 
 @pytest.mark.parametrize("limpieza", [sin_limpieza, limpieza_que_falla], ids=["apagada", "falla"])
@@ -144,7 +135,7 @@ def test_a_failed_operation_closes_no_session(operacion, usuario, tecnico, relax
     antes = Evento.objects.count()
 
     with (
-        mock.patch.object(services, "registrar_evento", side_effect=RuntimeError("falla")),
+        evento_que_falla(),
         pytest.raises(RuntimeError),
     ):
         OPERACIONES[operacion](usuario, tecnico)

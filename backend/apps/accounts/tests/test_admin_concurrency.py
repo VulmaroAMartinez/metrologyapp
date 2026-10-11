@@ -9,95 +9,39 @@ PostgreSQL ya tiene a un hilo esperando un candado antes de soltar al otro.
 
 import json
 import threading
-import time
 from contextlib import contextmanager
-from unittest import mock
 
 import pytest
-from django.contrib.sessions.backends.db import SessionStore
-from django.db import connection, transaction
-from django.test import Client, RequestFactory
+from django.contrib.auth.hashers import check_password
+from django.db import transaction
+from django.test import Client
 
 from apps.accounts import locks, services
 from apps.accounts.models import Usuario
+from apps.accounts.services import autenticacion, usuarios
 from apps.audit.models import Evento
-from apps.core.testing import DEFAULT_PASSWORD, UsuarioFactory
+from apps.core.testing import (
+    CAMBIAR,
+    DEFAULT_PASSWORD,
+    TOPE,
+    Api,
+    Retencion,
+    UsuarioFactory,
+    en_hilo,
+    esperar_bloqueo,
+    peticion,
+)
+
+from .ayudantes import lanza, retener
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 ADMIN, TECNICO, ESPECTADOR = Usuario.Rol.ADMIN, Usuario.Rol.TECNICO, Usuario.Rol.ESPECTADOR
 CLAVE = "tornillo-azul-77-nube"
 CLAVE_2 = "nube-de-algodon-88-azul"
-TOPE = 10  # segundos: solo para que una prueba rota no se cuelgue
 
 
 # --- herramientas de sincronización -----------------------------------------------------------
-
-
-class Retencion:
-    def __init__(self):
-        self.dentro = threading.Event()  # el hilo retenido ya llegó al punto
-        self.seguir = threading.Event()  # el hilo principal lo suelta
-
-
-def en_hilo(nombre, funcion):
-    resultado = {}
-
-    def correr():
-        try:
-            resultado["valor"] = funcion()
-        except Exception as error:  # noqa: BLE001 - se devuelve para afirmarlo desde la prueba
-            resultado["error"] = error
-        finally:
-            connection.close()
-
-    hilo = threading.Thread(target=correr, name=nombre)
-    hilo.start()
-    return hilo, resultado
-
-
-@contextmanager
-def retener(modulo, atributo, hilo, retencion, *, despues=False):
-    """Detiene al hilo `hilo` en `modulo.atributo` (antes de llamarlo, o después con `despues`)."""
-    real = getattr(modulo, atributo)
-
-    def envoltura(*args, **kwargs):
-        if threading.current_thread().name != hilo:
-            return real(*args, **kwargs)
-        if not despues:
-            retencion.dentro.set()
-            assert retencion.seguir.wait(TOPE)
-        resultado = real(*args, **kwargs)
-        if despues:
-            retencion.dentro.set()
-            assert retencion.seguir.wait(TOPE)
-        return resultado
-
-    with mock.patch.object(modulo, atributo, side_effect=envoltura):
-        yield
-
-
-def esperar_bloqueo():
-    """Sondeo acotado: espera a que PostgreSQL tenga un backend esperando un candado."""
-    limite = time.monotonic() + TOPE
-    pausa = threading.Event()
-    while time.monotonic() < limite:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT count(*) FROM pg_stat_activity "
-                "WHERE datname = current_database() AND wait_event_type = 'Lock'"
-            )
-            if cursor.fetchone()[0]:
-                return
-        pausa.wait(0.005)
-    pytest.fail("ningún hilo llegó a esperar un candado")
-
-
-def peticion():
-    """Una petición con sesión, como la que recibe el login."""
-    solicitud = RequestFactory().post("/api/v1/auth/login/")
-    solicitud.session = SessionStore()
-    return solicitud
 
 
 def entrar(correo, contrasena=DEFAULT_PASSWORD):
@@ -140,7 +84,7 @@ SOBRE_UN_ADMINISTRADOR = ["editar", "cambiar_rol", "desactivar", "restablecer"]
 @pytest.mark.parametrize("operacion", SOBRE_OTROS)
 def test_an_admins_login_is_not_blocked_by_any_admin_operation(operacion, mundo):
     retencion = Retencion()
-    with retener(services, "registrar_evento", "operacion", retencion):
+    with retener("registrar_evento", "operacion", retencion):
         hilo, resultado = en_hilo("operacion", lambda: SOBRE_OTROS[operacion](mundo, mundo["luis"]))
         assert retencion.dentro.wait(TOPE)  # la operación tiene L0 y la fila de su objetivo
 
@@ -156,7 +100,7 @@ def test_an_admins_login_is_not_blocked_by_any_admin_operation(operacion, mundo)
 @pytest.mark.parametrize("operacion", SOBRE_UN_ADMINISTRADOR)
 def test_the_targets_own_login_is_rejected_as_a_simultaneous_attempt(operacion, mundo):
     retencion = Retencion()
-    with retener(services, "registrar_evento", "operacion", retencion):
+    with retener("registrar_evento", "operacion", retencion):
         hilo, resultado = en_hilo("operacion", lambda: SOBRE_OTROS[operacion](mundo, mundo["beto"]))
         assert retencion.dentro.wait(TOPE)
 
@@ -178,7 +122,7 @@ def test_the_targets_own_login_is_rejected_as_a_simultaneous_attempt(operacion, 
 @pytest.mark.parametrize("objetivo", ["beto", "luis"], ids=["administrador", "tecnico"])
 def test_a_reset_waits_for_an_inflight_login_and_then_closes_its_session(objetivo, mundo):
     destino = mundo[objetivo]
-    real = services.check_password
+    real = check_password
     retencion = Retencion()
 
     def verificar_y_retener(contrasena, encoded):
@@ -189,7 +133,7 @@ def test_a_reset_waits_for_an_inflight_login_and_then_closes_its_session(objetiv
         return correcta
 
     solicitud = peticion()
-    with mock.patch.object(services, "check_password", side_effect=verificar_y_retener):
+    with autenticacion.sustituir(verificar_hash=verificar_y_retener):
         hilo_login, login = en_hilo(
             "login", lambda: services.iniciar_sesion(solicitud, destino.correo, DEFAULT_PASSWORD)
         )
@@ -222,7 +166,7 @@ def test_a_login_arriving_during_a_reset_is_rejected_and_then_sees_the_new_passw
 ):
     destino = mundo[objetivo]
     retencion = Retencion()
-    with retener(services, "registrar_evento", "reset", retencion):
+    with retener("registrar_evento", "reset", retencion):
         hilo, reset = en_hilo(
             "reset", lambda: services.restablecer_contrasena(mundo["ana"].pk, destino.pk, CLAVE_2)
         )
@@ -248,7 +192,7 @@ def test_changing_your_password_returns_409_if_it_changed_after_being_verified(m
     ana, beto = mundo["ana"], mundo["beto"]
     retencion = Retencion()
     solicitud = peticion()
-    with retener(services, "make_password", "cambio", retencion, despues=True):
+    with retener("cifrar_contrasena", "cambio", retencion, despues=True):
         hilo, cambio = en_hilo(
             "cambio",
             lambda: services.cambiar_contrasena(solicitud, ana.pk, DEFAULT_PASSWORD, CLAVE),
@@ -344,7 +288,7 @@ def test_changing_your_own_password_also_times_out_cleanly(mundo, settings):
 def test_changing_your_password_fails_if_you_were_demoted_after_verifying_it(mundo):
     ana, beto = mundo["ana"], mundo["beto"]
     retencion = Retencion()
-    with retener(services, "make_password", "cambio", retencion, despues=True):
+    with retener("cifrar_contrasena", "cambio", retencion, despues=True):
         hilo, cambio = en_hilo(
             "cambio",
             lambda: services.cambiar_contrasena(peticion(), ana.pk, DEFAULT_PASSWORD, CLAVE),
@@ -365,7 +309,7 @@ def test_changing_your_password_fails_if_you_were_demoted_after_verifying_it(mun
 def test_a_reset_for_admins_only_fails_if_the_target_was_demoted_meanwhile(mundo):
     ana, beto = mundo["ana"], mundo["beto"]
     retencion = Retencion()
-    with retener(services, "make_password", "reset", retencion, despues=True):
+    with retener("cifrar_contrasena", "reset", retencion, despues=True):
         hilo, reset = en_hilo(
             "reset",
             lambda: services.restablecer_contrasena(None, beto.pk, CLAVE_2, solo_rol=ADMIN),
@@ -385,7 +329,7 @@ def test_a_reset_for_admins_only_fails_if_the_target_was_demoted_meanwhile(mundo
 def test_a_reset_revalidates_the_password_if_the_targets_name_or_email_changed(mundo):
     ana, luis = mundo["ana"], mundo["luis"]
     retencion = Retencion()
-    with retener(services, "make_password", "reset", retencion, despues=True):
+    with retener("cifrar_contrasena", "reset", retencion, despues=True):
         hilo, reset = en_hilo(
             "reset", lambda: services.restablecer_contrasena(ana.pk, luis.pk, CLAVE_2)
         )
@@ -405,7 +349,7 @@ def test_a_reset_revalidates_the_password_if_the_targets_name_or_email_changed(m
 def test_a_reset_keeps_the_hash_if_the_changed_name_does_not_matter(mundo):
     ana, luis = mundo["ana"], mundo["luis"]
     retencion = Retencion()
-    with retener(services, "make_password", "reset", retencion, despues=True):
+    with retener("cifrar_contrasena", "reset", retencion, despues=True):
         hilo, reset = en_hilo(
             "reset", lambda: services.restablecer_contrasena(ana.pk, luis.pk, CLAVE_2)
         )
@@ -437,21 +381,18 @@ def test_other_database_errors_propagate_instead_of_asking_to_retry(sqlstate, mu
     error.__cause__ = causa
 
     with (
-        mock.patch.object(locks, "tomar_candado_de_administradores", side_effect=error),
+        usuarios.sustituir(tomar_candado_de_administradores=lanza(error)),
         pytest.raises(OperationalError, match="fallo de base de datos"),
     ):
         services.desactivar_usuario(mundo["ana"].pk, mundo["luis"].pk)
 
 
-def test_the_change_password_view_answers_a_service_error_with_its_own_status(
-    usuario, relaxed_rate
-):
-    from apps.core.testing import CAMBIAR, Api
-
+def test_the_change_password_view_answers_a_lock_timeout_with_503(usuario, relaxed_rate, settings):
+    settings.ADMIN_LOCK_TIMEOUT_MS = 200
     api = Api()
     assert api.login(usuario.correo).status_code == 200
 
-    with mock.patch.object(services, "cambiar_contrasena", side_effect=services.ReintentarMasTarde):
+    with candado_ajeno(lambda: Usuario.objects.select_for_update().get(pk=usuario.pk)):
         respuesta = api.post(
             CAMBIAR, {"contrasena_actual": DEFAULT_PASSWORD, "contrasena_nueva": CLAVE}
         )

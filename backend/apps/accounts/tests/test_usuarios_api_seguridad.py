@@ -3,12 +3,10 @@
 import json
 import logging
 from datetime import timedelta
-from unittest import mock
 
 import pytest
 from django.utils import timezone
 
-from apps.accounts import services
 from apps.accounts.models import Usuario
 from apps.audit.models import Evento
 from apps.core.testing import ME, Api, UsuarioFactory
@@ -19,6 +17,7 @@ from .ayudantes import (
     CLAVE_2,
     ESPECTADOR,
     TECNICO,
+    evento_que_falla,
     nuevo,
     reset,
     ruta,
@@ -154,7 +153,7 @@ def test_a_failure_in_the_middle_never_leaks_the_password_to_the_client_or_the_l
     api.csrf()
     objetivo = UsuarioFactory(correo="b@empresa.test")
 
-    with mock.patch.object(services, "registrar_evento", side_effect=RuntimeError("falla")):
+    with evento_que_falla():
         crear_fallido = api.post(BASE, nuevo(correo="otro@empresa.test"))
         reset_fallido = reset(api, objetivo.pk)
 

@@ -9,7 +9,6 @@ restablezca la MISMA contraseña.
 import json
 import logging
 import threading
-from unittest import mock
 
 import pytest
 from django.contrib.sessions.models import Session
@@ -23,7 +22,7 @@ from apps.audit.sanitize import DatosEventoInvalidosError, sanear, solo_permitid
 from apps.audit.services import registrar_evento
 from apps.core.testing import DEFAULT_PASSWORD, ME, Api, UsuarioFactory, en_hilo, peticion
 
-from .ayudantes import limpieza_que_falla, sin_limpieza
+from .ayudantes import evento_que_falla, limpieza_que_falla, sin_limpieza
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -143,7 +142,7 @@ def test_the_version_goes_up_once_per_deactivation_and_per_reset_and_never_other
 
 def test_a_failed_operation_does_not_bump_the_version(usuario, tecnico):
     with (
-        mock.patch.object(services, "registrar_evento", side_effect=RuntimeError("falla")),
+        evento_que_falla(),
         pytest.raises(RuntimeError),
     ):
         services.desactivar_usuario(usuario.pk, tecnico.pk)

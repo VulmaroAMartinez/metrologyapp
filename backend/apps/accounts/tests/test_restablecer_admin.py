@@ -8,10 +8,11 @@ import pytest
 from django.core.management import CommandError, call_command
 from django.utils import timezone
 
-from apps.accounts import services
 from apps.accounts.models import Usuario
 from apps.audit.models import Evento
 from apps.core.testing import DEFAULT_PASSWORD, ME, Api, UsuarioFactory
+
+from .ayudantes import evento_que_falla
 
 pytestmark = pytest.mark.django_db
 
@@ -118,7 +119,7 @@ def test_the_password_never_reaches_events_or_logs(admin, caplog):
 
 def test_if_the_event_fails_the_password_is_not_changed(admin):
     with (
-        mock.patch.object(services, "registrar_evento", side_effect=RuntimeError("falla")),
+        evento_que_falla(),
         pytest.raises(RuntimeError),
     ):
         ejecutar(admin.correo)

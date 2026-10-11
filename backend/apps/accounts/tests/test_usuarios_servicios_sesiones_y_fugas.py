@@ -1,18 +1,26 @@
 """Servicios de usuarios: sesiones, nada sensible en eventos/logs/errores y ramas restantes."""
 
 import logging
-from unittest import mock
 
 import pytest
 from django.contrib.sessions.models import Session
-from django.core.exceptions import ValidationError
 from django.test import override_settings
 
 from apps.accounts import services
 from apps.audit.models import Evento
 from apps.core.testing import DEFAULT_PASSWORD
 
-from .ayudantes import CLAVE, CLAVE_2, ESPECTADOR, TECNICO, crear, sesion, volcado_eventos
+from .ayudantes import (
+    CLAVE,
+    CLAVE_2,
+    ESPECTADOR,
+    TECNICO,
+    crear,
+    evento_que_falla,
+    sesion,
+    sin_comprobar_duplicados,
+    volcado_eventos,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -99,7 +107,7 @@ def test_a_failure_in_the_middle_never_leaks_the_password_through_the_error_or_l
     caplog.set_level(logging.DEBUG)
 
     with (
-        mock.patch.object(services, "registrar_evento", side_effect=RuntimeError("falla")),
+        evento_que_falla(),
         pytest.raises(RuntimeError) as error,
     ):
         operacion(ana, carla)
@@ -137,7 +145,7 @@ def test_a_well_formed_but_overlong_email_is_rejected(ana):
 
 def test_edit_resolves_a_unique_index_clash_when_the_precheck_is_bypassed(ana, beto):
     with (
-        mock.patch.object(services, "_verificar_duplicados"),
+        sin_comprobar_duplicados(),
         pytest.raises(services.CorreoDuplicado),
     ):
         services.editar_usuario(ana.pk, beto.pk, {"correo": "ANA@empresa.test"})
@@ -152,11 +160,12 @@ def test_change_role_rejects_an_unknown_role(ana, carla):
         services.cambiar_rol(ana.pk, carla.pk, "SUPERADMIN")
 
 
-def test_a_validator_rejection_message_is_built_from_the_validators_text(ana, carla):
-    with (
-        mock.patch.object(
-            services, "validate_password", side_effect=ValidationError(["Regla incumplida."])
-        ),
-        pytest.raises(services.DatosDeUsuarioInvalidos, match="Regla incumplida"),
-    ):
+def test_a_validator_rejection_message_is_built_from_the_validators_text(ana, carla, settings):
+    settings.AUTH_PASSWORD_VALIDATORS = [
+        {
+            "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+            "OPTIONS": {"min_length": 123},
+        }
+    ]
+    with pytest.raises(services.DatosDeUsuarioInvalidos, match="123"):
         services.restablecer_contrasena(ana.pk, carla.pk, CLAVE)

@@ -3,7 +3,6 @@ la indistinguibilidad del login."""
 
 import json
 import logging
-from unittest import mock
 
 import pytest
 from django.contrib.sessions.models import Session
@@ -11,12 +10,12 @@ from django.db import OperationalError, connection
 from django.test.utils import CaptureQueriesContext
 from psycopg.errors import LockNotAvailable
 
-from apps.accounts import services
 from apps.accounts.models import Usuario
+from apps.accounts.services import autenticacion
 from apps.audit.models import Evento
 from apps.core.testing import CAMBIAR, DEFAULT_PASSWORD, LOGIN, Api, UsuarioFactory
 
-from .ayudantes import CASOS
+from .ayudantes import CASOS, evento_que_falla, lanza
 
 pytestmark = pytest.mark.django_db
 
@@ -106,7 +105,7 @@ def test_contended_attempt_writes_a_single_failure_event(api, usuario):
     error = OperationalError("could not obtain lock")
     error.__cause__ = LockNotAvailable()
     with (
-        mock.patch.object(services.Usuario.objects, "select_for_update", side_effect=error),
+        autenticacion.sustituir(obtener_usuario_bloqueado=lanza(error)),
         CaptureQueriesContext(connection) as consultas,
     ):
         respuesta = api.login(usuario.correo, DEFAULT_PASSWORD)
@@ -165,7 +164,7 @@ def test_successful_login_writes_one_event_with_user_and_ip(api, usuario):
 
 def test_if_the_login_event_fails_the_login_is_rolled_back(usuario):
     api = Api(raise_request_exception=False)
-    with mock.patch.object(services, "registrar_evento", side_effect=RuntimeError("falla")):
+    with evento_que_falla():
         respuesta = api.login(usuario.correo)
 
     usuario.refresh_from_db()
@@ -177,7 +176,7 @@ def test_if_the_login_event_fails_the_login_is_rolled_back(usuario):
 
 def test_if_the_failure_event_fails_the_counter_is_rolled_back(usuario):
     api = Api(raise_request_exception=False)
-    with mock.patch.object(services, "registrar_evento", side_effect=RuntimeError("falla")):
+    with evento_que_falla():
         respuesta = api.login(usuario.correo, "mal-intento-1")
 
     usuario.refresh_from_db()
@@ -245,7 +244,7 @@ def test_rejected_password_changes_write_no_event(api, administrador):
 def test_if_the_password_event_fails_the_change_is_rolled_back(administrador):
     api = Api(raise_request_exception=False)
     api.login(administrador.correo)
-    with mock.patch.object(services, "registrar_evento", side_effect=RuntimeError("falla")):
+    with evento_que_falla():
         respuesta = cambiar(api)
 
     administrador.refresh_from_db()

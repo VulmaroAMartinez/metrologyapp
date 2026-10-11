@@ -17,14 +17,17 @@ ESCRITORES_DE_BD = {"update", "create", "update_or_create", "get_or_create", "Us
 
 # Funciones que escriben esos campos directamente, todas con L0 (`_bloquear`).
 CON_CANDADO = {
-    "apps/accounts/services.py:cambiar_rol",
-    "apps/accounts/services.py:desactivar_usuario",
-    "apps/accounts/services.py:reactivar_usuario",
+    "apps/accounts/services/usuarios.py:cambiar_rol",
+    "apps/accounts/services/usuarios.py:desactivar_usuario",
+    "apps/accounts/services/usuarios.py:reactivar_usuario",
 }
 # Crea usuarios (con su rol) a través del manager de bajo nivel y también toma L0.
-CREADOR = "apps/accounts/services.py:crear_usuario"
+CREADOR = "apps/accounts/services/usuarios.py:crear_usuario"
 # Bajo nivel: solo lo llama `crear_usuario` (se comprueba abajo).
-DE_BAJO_NIVEL = {"apps/accounts/managers.py:UsuarioManager.create_user"}
+DE_BAJO_NIVEL = {
+    "apps/accounts/managers.py:UsuarioManager.create_user",
+}
+CREADOR_DE_BAJO_NIVEL = "apps/accounts/services/usuarios.py:_crear_en_bd"
 
 
 def archivos_de_codigo():
@@ -150,7 +153,15 @@ def test_the_low_level_creator_is_only_called_from_crear_usuario():
             ):
                 llamadores.add(f"{relativa}:{nombre}")
 
-    assert llamadores == {CREADOR}
+    assert llamadores == {CREADOR_DE_BAJO_NIVEL}
+    # ... y `_crear_en_bd` solo se usa como punto de inyección de `crear_usuario`.
+    usuarios_py = (BACKEND / "apps/accounts/services/usuarios.py").read_text(encoding="utf-8")
+    quienes = [
+        n
+        for n, f in funciones(ast.parse(usuarios_py))
+        if "crear_usuario_en_bd" in {x.attr for x in ast.walk(f) if isinstance(x, ast.Attribute)}
+    ]
+    assert quienes == ["crear_usuario"]
 
 
 def test_editar_usuario_cannot_be_used_to_write_rol_or_activo():
@@ -163,7 +174,7 @@ def test_editar_usuario_cannot_be_used_to_write_rol_or_activo():
         "activo": 0,
     }
 
-    assert set(services._limpiar_campos(intento)) <= {"nombre", "correo", "numero_nomina"}
+    assert set(services.limpiar_campos(intento)) <= {"nombre", "correo", "numero_nomina"}
 
 
 def test_only_deactivate_and_reset_bump_the_session_version_atomically_under_the_lock():
@@ -175,11 +186,11 @@ def test_only_deactivate_and_reset_bump_the_session_version_atomically_under_the
     }
 
     esperados = {
-        "apps/accounts/services.py:_invalidar_sesiones_anteriores",
+        "apps/accounts/services/usuarios.py:_invalidar_sesiones_anteriores",
     }
     assert escriben == esperados
 
-    codigo = (BACKEND / "apps/accounts/services.py").read_text(encoding="utf-8")
+    codigo = (BACKEND / "apps/accounts/services/usuarios.py").read_text(encoding="utf-8")
     arbol = ast.parse(codigo)
     por_nombre = {n: f for n, f in funciones(arbol)}
     ayudante = por_nombre["_invalidar_sesiones_anteriores"]

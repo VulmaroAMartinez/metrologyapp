@@ -2,9 +2,9 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
-from unittest import mock
 
 import pytest
+from django.contrib.auth.hashers import check_password
 from django.contrib.sessions.models import Session
 from django.db import connection
 from django.test import override_settings
@@ -12,10 +12,11 @@ from django.utils import timezone
 
 from apps.accounts import services
 from apps.accounts.models import Usuario
+from apps.accounts.services import autenticacion
 from apps.core.testing import DEFAULT_PASSWORD, LOGIN, ME, Api, UsuarioFactory
 from config.settings import base
 
-from .ayudantes import CASOS
+from .ayudantes import CASOS, espiar_hash, lanza
 
 pytestmark = pytest.mark.django_db
 
@@ -46,7 +47,7 @@ def test_every_failure_has_the_same_status_body_and_headers(cuentas, relaxed_rat
 
 def test_a_hash_is_verified_exactly_once_in_every_case(cuentas, relaxed_rate):
     for nombre, (correo, contrasena) in CASOS.items():
-        with mock.patch.object(services, "check_password", wraps=services.check_password) as spy:
+        with espiar_hash() as spy:
             Api().login(correo, contrasena)
 
         assert spy.call_count == 1, nombre
@@ -153,8 +154,8 @@ def test_failure_counter_is_atomic_with_stale_instances(usuario):
     uno = Usuario.objects.get(pk=usuario.pk)
     otro = Usuario.objects.get(pk=usuario.pk)
 
-    services._registrar_fallo(uno.pk, timezone.now())
-    services._registrar_fallo(otro.pk, timezone.now())
+    services.autenticacion._registrar_fallo(uno.pk, timezone.now())
+    services.autenticacion._registrar_fallo(otro.pk, timezone.now())
 
     usuario.refresh_from_db()
     assert usuario.intentos_fallidos == 2
@@ -167,7 +168,7 @@ def test_failure_counter_is_atomic_across_connections(settings):
 
     def fallar(_):
         try:
-            services._registrar_fallo(usuario.pk, timezone.now())
+            services.autenticacion._registrar_fallo(usuario.pk, timezone.now())
         finally:
             connection.close()
 
@@ -189,7 +190,7 @@ def test_parallel_guesses_cannot_exceed_the_lock_threshold_and_never_skip_the_ha
     """
     usuario = UsuarioFactory(correo=CORREO)
     llamadas = []
-    real = services.check_password
+    real = check_password
 
     def lenta(contrasena, encoded):
         time.sleep(0.2)
@@ -203,7 +204,7 @@ def test_parallel_guesses_cannot_exceed_the_lock_threshold_and_never_skip_the_ha
             connection.close()
 
     with (
-        mock.patch.object(services, "check_password", side_effect=lenta),
+        autenticacion.sustituir(verificar_hash=lenta),
         ThreadPoolExecutor(max_workers=12) as pool,
     ):
         motivos = list(pool.map(intento, range(12)))
@@ -224,8 +225,8 @@ def test_contended_attempt_is_rejected_without_waiting_and_looks_like_any_failur
     error = OperationalError("could not obtain lock")
     error.__cause__ = LockNotAvailable()
     with (
-        mock.patch.object(services.Usuario.objects, "select_for_update", side_effect=error),
-        mock.patch.object(services, "check_password", wraps=services.check_password) as spy,
+        autenticacion.sustituir(obtener_usuario_bloqueado=lanza(error)),
+        espiar_hash() as spy,
     ):
         respuesta = api.login(usuario.correo, DEFAULT_PASSWORD)  # incluso con la contraseña buena
 
@@ -239,9 +240,7 @@ def test_other_database_errors_are_not_swallowed(api, usuario):
     from django.db import OperationalError
 
     with (
-        mock.patch.object(
-            services.Usuario.objects, "select_for_update", side_effect=OperationalError("caída")
-        ),
+        autenticacion.sustituir(obtener_usuario_bloqueado=lanza(OperationalError("caída"))),
         pytest.raises(OperationalError, match="caída"),
     ):
         services.iniciar_sesion(None, usuario.correo, DEFAULT_PASSWORD)
@@ -253,7 +252,7 @@ def test_other_database_errors_are_not_swallowed(api, usuario):
 def test_sixth_attempt_in_a_minute_is_429_with_retry_after_and_computes_no_hash(
     api, clock, usuario
 ):
-    with mock.patch.object(services, "check_password", wraps=services.check_password) as spy:
+    with espiar_hash() as spy:
         estados = [api.login(usuario.correo, "mal").status_code for _ in range(5)]
         sexto = api.login(usuario.correo, DEFAULT_PASSWORD)  # ni siquiera la correcta
 

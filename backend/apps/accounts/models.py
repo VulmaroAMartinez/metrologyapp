@@ -15,7 +15,7 @@ class Usuario(AbstractBaseUser):
     """Usuario del sistema. No hay is_staff ni is_superuser: administrar = rol ADMIN.
 
     REGLA: toda ruta que escriba `rol` o `activo` debe tomar el candado L0 de administradores
-    (`services._bloquear`, ver `locks.py`): de eso depende "nunca queda el sistema sin un
+    (`services.usuarios._bloquear`, ver `locks.py`): de eso depende "nunca queda el sistema sin un
     administrador activo". `tests/test_admin_lock_rule.py` lo comprueba con ast.
     """
 

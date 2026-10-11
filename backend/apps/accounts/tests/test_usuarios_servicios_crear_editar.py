@@ -1,15 +1,14 @@
 """Servicios de usuarios: crear, editar, normalización, contraseñas y duplicados."""
 
-from unittest import mock
-
 import pytest
 from django.db import IntegrityError
 
 from apps.accounts import services
 from apps.accounts.models import Usuario
+from apps.accounts.services import usuarios
 from apps.audit.models import Evento
 
-from .ayudantes import ADMIN, CLAVE, crear, instantanea
+from .ayudantes import ADMIN, CLAVE, crear, instantanea, lanza, sin_comprobar_duplicados
 
 pytestmark = pytest.mark.django_db
 
@@ -170,7 +169,7 @@ def test_the_unique_index_is_the_last_line_of_defense_for_simultaneous_submissio
     # lanza IntegrityError y se traduce al mismo error limpio: nunca un 500.
     crear(ana, correo="uno@empresa.test", numero_nomina="N-1")
 
-    with mock.patch.object(services, "_verificar_duplicados"):
+    with sin_comprobar_duplicados():
         with pytest.raises(services.CorreoDuplicado):
             crear(ana, correo="UNO@empresa.test")
         with pytest.raises(services.NominaDuplicada):
@@ -179,7 +178,7 @@ def test_the_unique_index_is_the_last_line_of_defense_for_simultaneous_submissio
 
 def test_unrecognized_integrity_errors_are_not_disguised(ana):
     with (
-        mock.patch.object(Usuario.objects, "create_user", side_effect=IntegrityError("otra")),
+        usuarios.sustituir(crear_usuario_en_bd=lanza(IntegrityError("otra"))),
         pytest.raises(IntegrityError, match="otra"),
     ):
         crear(ana)

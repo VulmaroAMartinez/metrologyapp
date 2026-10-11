@@ -9,15 +9,17 @@ pasarían la comprobación y los dos cambios se confirmarían.
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from unittest import mock
 
 import pytest
 from django.db import connection
 
 from apps.accounts import services
 from apps.accounts.models import Usuario
+from apps.accounts.services import usuarios
 from apps.audit.models import Evento
 from apps.core.testing import Api, UsuarioFactory
+
+from .ayudantes import sin_comprobar_duplicados
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -44,13 +46,13 @@ def en_paralelo(*tareas):
 
 @pytest.fixture
 def evento_lento():
-    real = services.registrar_evento
+    real = usuarios.puntos.registrar_evento
 
     def lento(*args, **kwargs):
         time.sleep(0.3)  # mantiene abierta la transacción y sus candados
         return real(*args, **kwargs)
 
-    with mock.patch.object(services, "registrar_evento", side_effect=lento):
+    with usuarios.sustituir(registrar_evento=lento):
         yield
 
 
@@ -155,7 +157,7 @@ def test_the_unique_index_resolves_the_race_when_the_precheck_is_bypassed():
             contrasena="tornillo-azul-77-nube",
         )
 
-    with mock.patch.object(services, "_verificar_duplicados"):  # simula pasar la comprobación
+    with sin_comprobar_duplicados():  # simula pasar la comprobación
         resultados = en_paralelo(crear(ana), crear(beto))
 
     assert sorted(estado for estado, _ in resultados) == ["error", "ok"], resultados

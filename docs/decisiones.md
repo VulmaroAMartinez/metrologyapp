@@ -246,3 +246,24 @@ qué se decidió y por qué; si no te convence, se revierte con el commit que se
 - **Ruff**: `apps/core/testing.py` y `conftest.py` quedan exentos de `S101`/`S105`/`S106` (son
   ayudantes de prueba) en `pyproject.toml`.
 
+- **Servicios de cuentas en un paquete** (`refactor: servicios de cuentas en un paquete`).
+  `apps/accounts/services.py` → `services/{__init__,autenticacion,usuarios}.py`; `services/__init__.py`
+  reexporta la API pública, así que vistas y comandos no cambian. `iniciar_sesion` queda en funciones
+  pequeñas (`_verificar`, `_registrar_resultado`, `_registrar_exito`, `_registrar_rechazo`,
+  `_rechazar_por_intento_simultaneo`). El reloj y el verificador de hash se pasan como argumentos
+  (`reloj=`, `verificar_hash=`); el resto de puntos de inyección (registro de eventos, lectura de la
+  fila con candado, cifrado, cierre de sesiones, comprobación de duplicados, alta en la base,
+  candado L0) viven en `puntos` y se cambian con `sustituir(...)` (módulos `autenticacion` y
+  `usuarios`). **Ya no hay `mock.patch` sobre atributos internos de services** (antes ~40 sitios);
+  la prueba del mensaje de un validador usa `AUTH_PASSWORD_VALIDATORS` real.
+- **Pruebas ast actualizadas** a las rutas nuevas (`test_admin_lock_rule.py`,
+  `test_error_unification.py`) y comprobadas con violaciones deliberadas, que ya revertí:
+  (1) función nueva que escribe `rol` sin L0 → falla `test_only_the_known_functions_write_rol_or_activo`;
+  (2) `desactivar_usuario` sin `_bloquear` → fallan `test_every_writer_takes_the_administrators_lock` y
+  la de `sesion_version`; (3) `raise` en el login → falla `test_iniciar_sesion_has_no_raise_of_business_errors`
+  (y 7 más). Antes y después: 1199 pruebas, esquema OpenAPI idéntico (`diff` vacío).
+- **gitleaks**: la lista de excepciones de `.gitleaks.toml` seguía los nombres de archivo anteriores a
+  la partición de las pruebas (`test_usuarios_api.py`, `recorrer(api_admin, ...)`); se actualizó a los
+  nombres nuevos sin ampliarla (misma línea, mismo archivo). Lo detectó `make ci` (secrets, 5 hallazgos
+  en el commit 59f51e0, falsos positivos de parámetros de consulta).
+

@@ -1,11 +1,10 @@
 """Servicios de usuarios: eventos de cada servicio y atomicidad cambio + evento."""
 
-from unittest import mock
-
 import pytest
 from django.contrib.sessions.models import Session
 
 from apps.accounts import services
+from apps.accounts.services import usuarios
 from apps.audit.models import Evento
 
 from .ayudantes import (
@@ -14,6 +13,7 @@ from .ayudantes import (
     ESPECTADOR,
     OPERACIONES,
     TECNICO,
+    evento_que_falla,
     instantanea,
     sesion,
     volcado_eventos,
@@ -108,7 +108,7 @@ def test_if_the_event_fails_the_change_is_reverted(nombre, ana, objetivo_para):
     antes = instantanea()
 
     with (
-        mock.patch.object(services, "registrar_evento", side_effect=RuntimeError("falla")),
+        evento_que_falla(),
         pytest.raises(RuntimeError, match="falla"),
     ):
         OPERACIONES[nombre](ana, objetivo)
@@ -120,14 +120,14 @@ def test_if_the_event_fails_the_change_is_reverted(nombre, ana, objetivo_para):
 def test_if_the_change_fails_after_the_event_no_event_remains(nombre, ana, objetivo_para):
     objetivo = objetivo_para(nombre)
     antes = instantanea()
-    real = services.registrar_evento
+    real = usuarios.puntos.registrar_evento
 
     def evento_y_luego_falla(*args, **kwargs):
         real(*args, **kwargs)  # el evento queda insertado...
         raise RuntimeError("el cambio falla después")  # ...y luego algo falla
 
     with (
-        mock.patch.object(services, "registrar_evento", side_effect=evento_y_luego_falla),
+        usuarios.sustituir(registrar_evento=evento_y_luego_falla),
         pytest.raises(RuntimeError, match="después"),
     ):
         OPERACIONES[nombre](ana, objetivo)
@@ -142,7 +142,7 @@ def test_if_the_operation_fails_no_session_is_closed(nombre, ana, carla):
     antes = instantanea()
 
     with (
-        mock.patch.object(services, "registrar_evento", side_effect=RuntimeError("falla")),
+        evento_que_falla(),
         pytest.raises(RuntimeError),
     ):
         OPERACIONES[nombre](ana, carla)

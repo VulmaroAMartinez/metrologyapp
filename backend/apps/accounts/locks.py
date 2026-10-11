@@ -26,6 +26,14 @@ from django.db import connection
 NAMESPACE_DE_CANDADOS = 0x4D455452
 CANDADO_ADMINISTRADORES = 1
 
+SQLSTATE_LOCK_NOT_AVAILABLE = "55P03"  # PostgreSQL: lock_not_available (NOWAIT, lock_timeout)
+
+
+def es_candado_no_disponible(error) -> bool:
+    """¿Este OperationalError es "candado no disponible" (55P03)? Cualquier otro error de base de
+    datos (caída, deadlock, timeout, permisos...) NO debe disfrazarse de reintento."""
+    return getattr(error.__cause__, "sqlstate", None) == SQLSTATE_LOCK_NOT_AVAILABLE
+
 
 def fijar_lock_timeout() -> None:
     """Limita la espera de candados en esta transacción (SET LOCAL). Al vencer, PostgreSQL lanza
