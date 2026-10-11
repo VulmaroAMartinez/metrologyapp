@@ -2,8 +2,13 @@
 Fuente de verdad: docs/DEFINICION.md (modelo en sección 5, reglas en sección 6, permisos en sección 3).
 Si algo no está definido, revisa la sección 13 y pregunta; no inventes reglas de negocio.
 
-## Comandos (se actualizan al terminar el sprint 1)
-- make up | make test | make lint | make ci
+## Comandos
+Todos los objetivos crean `.env` desde `.env.example` si falta.
+- `make up` / `make down` / `make logs` / `make migrate`: entorno de desarrollo (levanta, detiene, logs, migraciones con el rol `migrator`).
+- `make test`: pytest del backend con cobertura de ramas y umbral de 95 %. `make fmt`: ruff (escribe en `backend/`). `make lock`: regenera `requirements*.txt` con hashes.
+- `make lint`: ruff, compose y Caddyfile. `make schema`: contrato OpenAPI (`--validate --fail-on-warn`). `make audit`: pip-audit. `make secrets`: gitleaks (historial y archivos).
+- `make test-proxy`: pruebas contra Caddy + Django reales. `make check-containers`: seguridad de los contenedores en ejecución.
+- `make ci`: lint, schema, audit, test, test-proxy y secrets (lo mismo que `.github/workflows/ci.yml`). `make help` los lista.
 
 ## Estructura (backend/apps)
 - `accounts/services/{autenticacion,usuarios}.py`: reglas de negocio de cuentas; `services/__init__.py` reexporta la API.

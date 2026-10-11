@@ -7,7 +7,7 @@ Definición completa: [docs/DEFINICION.md](docs/DEFINICION.md). Este README crec
 Requisitos: Docker con Compose y GNU Make.
 
 ```sh
-cp .env.example .env     # todos los valores son de ejemplo; cámbialos fuera de desarrollo
+cp .env.example .env     # opcional: cualquier `make` lo crea si falta; los valores son de ejemplo, cámbialos fuera de desarrollo
 make up                  # levanta db, api, web y proxy, y aplica las migraciones
 ```
 
@@ -29,6 +29,7 @@ Si ejecutas `docker compose` a mano, usa `docker compose -f deploy/docker-compos
 | `make check-containers` | Verifica la seguridad de los contenedores del entorno de desarrollo en ejecución |
 | `make secrets` | Escaneo de secretos con gitleaks |
 | `make ci` | lint + contrato OpenAPI + auditoría + pruebas + pruebas contra el stack real + secretos |
+| `.github/workflows/ci.yml` | Lo mismo que `make ci`, en tres trabajos paralelos (calidad, pruebas, proxy y esquema) en push y pull request a `main` |
 
 ## Roles de base de datos
 
