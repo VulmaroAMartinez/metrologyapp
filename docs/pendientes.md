@@ -35,11 +35,11 @@ a Vul están en `docs/decisiones.md` («Pendiente para la v1.2» y «Decisiones 
 ## Integración continua (de la modo autónomo)
 - El flujo `.github/workflows/ci.yml` **no se ha ejecutado en GitHub** (no hay push ni token en esta sesión):
   la primera ejecución real puede mostrar ajustes (p. ej. el tiempo de las pruebas de proxy en el ejecutor).
-- La caché del flujo guarda solo las imágenes base; la capa de `pip install` de la imagen de pruebas no se
-  cachea (requeriría `buildx bake` con caché `gha`).
+- El flujo no usa caché: las imágenes base se descargan por digest en cada corrida y la capa de `pip install`
+  se reconstruye (una caché con `buildx bake` y caché `gha` queda como mejora posible, sin probar).
 - Dependabot vigila `/frontend` (npm y Docker) pero aún no hay `package.json`: hasta el sprint del frontend
   mostrará un aviso en esa entrada.
-- Los SHA de las acciones se resolvieron el 10-oct-2026 (`actions/checkout` v7.0.1, `actions/cache` v6.1.0);
+- Los SHA de las acciones se resolvieron el 10-oct-2026 (`actions/checkout` v7.0.1);
   Dependabot los actualizará.
 
 ## Parte 2 del modo autónomo

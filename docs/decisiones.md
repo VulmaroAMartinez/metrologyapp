@@ -268,10 +268,14 @@ qué se decidió y por qué; si no te convence, se revierte con el commit que se
 ### Fase 3 – Integración continua y documentación
 - **Flujo de CI** (`.github/workflows/ci.yml`): tres trabajos en paralelo que ejecutan los mismos `make` de
   `make ci` (calidad: lint+audit+secrets con historial completo; pruebas; proxy+esquema). Acciones fijadas por SHA
-  completo (`actions/checkout` v7.0.1 y `actions/cache` v6.1.0, resueltos con `git ls-remote` el 10-oct-2026),
+  completo (`actions/checkout` v7.0.1, resuelto con `git ls-remote` el 10-oct-2026),
   `permissions: contents: read`, `persist-credentials: false`, sin secretos, `concurrency` que cancela corridas
-  repetidas. **Caché**: solo imágenes base (se guardan con `docker save` y se cargan con `docker load`); la capa de
-  `pip install` no se cachea (haría falta `buildx bake` con caché `gha`, sin poder probarlo aquí). **No se ha ejecutado
+  repetidas. **Sin caché de imágenes**: se probó guardar las base con `docker save` y fallaba
+  (`invalid reference format`: las imágenes fijadas solo por digest salen en `docker images` como `python:<none>`, y
+  `docker save` rechaza esa referencia). Se eliminó por completo, no se arregló: `docker load` de una imagen guardada
+  por ID no restaura tags ni RepoDigests, el `FROM …@sha256` vuelve a consultar el registro, y descargar frente a
+  cargar costó lo mismo (1,7 s frente a 2,3 s). Cargar imágenes de una caché en vez de descargarlas por digest
+  debilitaría el fijado y añadiría superficie de cadena de suministro. La capa de `pip install` tampoco se cachea. **No se ha ejecutado
   en GitHub** (no hay push en esta sesión). Una prueba (`test_github_files.py`) falla si una acción no está fijada por
   SHA, si el token gana permisos, si aparece `secrets.` o si `make ci` incluye un objetivo que el flujo no corre.
 - **Dependabot**: pip (`/backend`), npm (`/frontend`), docker (`/backend`, `/frontend`), docker-compose (`/deploy`)
