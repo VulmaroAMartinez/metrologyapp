@@ -1,0 +1,294 @@
+# Decisiones del sprint 1
+
+Se completa al terminar el sprint. Los valores provisionales se listan para que Vul los confirme.
+
+## Versiones (verificadas el 8-oct-2026)
+- PostgreSQL 18.6 (no existe LTS; es la mayor vigente, soporte hasta 2030).
+- Django 5.2 LTS (5.2.18), soporta Python 3.10–3.14. El LTS 6.2 sale en abril de 2027.
+- Python 3.14.8 (3.13 entra en solo-seguridad en oct-2026). Todas las dependencias tienen wheels para 3.14; la instalación usa `--only-binary` y `--require-hashes`.
+- Node 24.21.0 (LTS vigente; Node 26 pasa a LTS el 28-oct-2026). Caddy 2.11.7.
+- Imágenes con tag exacto y digest sha256.
+
+## Decisiones técnicas
+- Sin `django.contrib.auth/sessions/contenttypes` en el commit 3: se agregan junto con el modelo de usuario propio para que la primera migración ya lo use.
+- `/api/v1/health/` devuelve solo `{"status": "ok"}` (503 `{"status": "error"}` si la BD no responde).
+- El esquema OpenAPI se sirve solo con `OPENAPI_SCHEMA_ENABLED=True` (dev); en producción responde 404.
+- La validación de producción solo comprueba `DB_PASSWORD` (la única clave de BD que ve el servidor, rol `app`).
+- **Sin `django.contrib.admin` en la v1**: la administración se hace con la API y la pantalla de usuarios; no existe `is_staff` ni `is_superuser`. Los administradores son Usuarios con rol ADMIN (cada instalación tiene dos).
+- Se instalan `contenttypes`, `auth` y `sessions` (las dos primeras por requisito de Django, `sessions` para la sesión del commit 5). `auth` crea sus tablas `auth_group` y `auth_permission`, que no se usan.
+- Usuario: correo único sin distinguir mayúsculas (`UNIQUE` sobre `Lower(correo)`) y guardado en minúsculas; `rol` con CheckConstraint; `intentos_fallidos >= 0`. El manager exige rol y no crea superusuarios.
+- Argon2 es el único hasher, con los parámetros por defecto de Django (m=100 MiB, t=2, p=8): cada verificación usa unos 100 MiB de memoria transitoria; con 3 workers de gunicorn, dimensionar la memoria del contenedor en consecuencia. Las pruebas usan MD5 (`config.settings.test`) y una prueba verifica la configuración real.
+- **Dimensionamiento de memoria de `api`** (medido el 8-oct-2026): cada hash/verificación Argon2 suma ~100 MiB transitorios; un proceso de Python en reposo ocupa ~45 MiB y la API en reposo con 3 workers ~175 MiB. Peor caso con 3 hashes simultáneos ≈ 480 MiB. Límite fijado en `mem_limit: 768m` (sin swap, `pids_limit: 256`). Si se suben workers o parámetros de Argon2, recalcular: `workers × 100 MiB + 175 MiB + holgura`.
+- **Eventos** (commit 6, `apps/audit`): `Evento` es solo de inserción en dos capas. En el código: `save()` sobre un registro existente, `delete()` y, en el queryset, `update`, `delete`, `bulk_update` y `bulk_create(update_conflicts=True)` lanzan `EventoInmutableError`. En la base: la migración revoca `UPDATE, DELETE, TRUNCATE` al rol `app` (los privilegios por defecto se los darían) y una prueba lo comprueba con el rol `app` sobre la base real. **Límite**: el rol `migrator` (dueño de la tabla) sí puede modificarla; se usa solo para migraciones y pruebas y no debe usarse en ejecución.
+- `registrar_evento()` lanza error fuera de `transaction.atomic()`: el cambio y su evento se confirman o se revierten juntos. El login escribe contador, sesión y evento en una misma transacción, de modo que un fallo (401) **sí** confirma contador y evento; si el evento falla, todo se revierte (500).
+- **Saneamiento**: `antes`/`despues` solo aceptan la lista blanca de `apps/audit/sanitize.py`, con valores escalares y sin forma de hash; cualquier otra clave (contraseñas, hashes, tokens, `intentos_fallidos`…) lanza error. Cada sprint que audite datos nuevos debe ampliar la lista.
+- **SESION_FALLIDA**: exactamente una inserción por intento fallido, exista o no el usuario. Para un correo inexistente el evento queda sin usuario y **no guarda el correo** (ni en la descripción ni en el JSON); sí guarda la IP y el motivo interno (`despues = {"motivo": ...}`). El intento que además bloquea la cuenta escribe dos eventos (`SESION_FALLIDA` + `CUENTA_BLOQUEADA`).
+- **Los 429 no generan evento** (para no llenar la tabla bajo ataque): solo una línea en el log de la aplicación (`Límite de tasa excedido; reintento en N s`), sin correo, IP ni contraseña.
+- **El cierre de sesión no genera evento** (decisión de Vul: criterio de pocos eventos de `CLAUDE.md` y DEFINICION v1.1 §6.9; no se agrega `SESION_CERRADA`). Antes esto se justificaba con «§6.9 no define tipo».
+- La lista de tipos queda fija en una `CheckConstraint`: agregar un tipo en un sprint posterior requiere una migración (y, según `CLAUDE.md`, preguntar antes a Vul).
+- **La bitácora no registra eventos de avisos** (decisión de Vul): se eliminaron `AVISO_CREADO`, `AVISO_EDITADO`, `AVISO_CANCELADO`, `AVISO_ENVIADO` y `AVISO_FALLIDO` del `TextChoices` y de la restricción (migración `audit.0003`). Antes se comprobó que ninguna fila ni código los usaba; la migración además falla con un mensaje claro si encontrara alguna fila (los eventos no se pueden borrar). **Se conserva `PROCESO_DIARIO_EJECUTADO`.** La tabla `Aviso` conserva su propio historial: `creado_por`, `enviado_en`, `cancelado_en`, `cancelado_por` y `error`.
+- Las pruebas de roles (privilegios de `app` y tabla de eventos) usan una base propia, `metrologia_roles_test`: la crea y la destruye la sesión de pruebas como `migrator`, le aplica el mismo `deploy/db/privileges.sql` que `init.sh` usa para la base real y la migra. `make test` no migra ni escribe en la base de desarrollo (comprobado: secuencia de eventos, filas y migraciones idénticas antes y después). `init.sql` quedó solo con los roles y el dueño de la base; los privilegios por base están en `privileges.sql`.
+- Los datos sensibles no entran a logs: `django.db.backends` fijado en INFO (a nivel DEBUG registraría el hash en el SQL).
+- **Autenticación** (commit 5): sesión en base de datos (cerrar sesión la borra en el servidor), ventana deslizante de inactividad, clave de sesión rotada al iniciar sesión. Cookies `HttpOnly`, `SameSite=Lax`; en prod `Secure` y prefijo `__Host-` (sin Domain, Path=/). La cookie CSRF también es `HttpOnly`: el token se obtiene de `GET /api/v1/auth/csrf/` y **rota al iniciar sesión** (el cliente debe pedirlo de nuevo). CSRF se exige en todo POST, también anónimo (login incluido). CORS cerrado: no se instala `django-cors-headers`; mismo origen vía Caddy.
+- **Login indistinguible**: correo inexistente, contraseña incorrecta, usuario inactivo, cuenta bloqueada y usuario sin contraseña devuelven 401 con el mismo cuerpo y cabeceras, y siempre ejecutan una verificación de hash (contra un hash ficticio precalculado cuando no hay usuario elegible). El motivo real solo va a logs internos (sin correo ni contraseña).
+- **Contador de fallos**: un único `UPDATE` atómico (sin leer-modificar-guardar). Al llegar al límite se fija `bloqueado_hasta` y el contador queda en el límite mientras dure el bloqueo; los intentos durante el bloqueo no lo alargan; al vencer, el siguiente fallo abre un ciclo nuevo (cuenta 1) y un login correcto lo reinicia a 0.
+- **Intentos simultáneos contra una misma cuenta**: el login lee la fila con `SELECT ... FOR NO KEY UPDATE NOWAIT` y la mantiene bloqueada hasta registrar el resultado. Sin candado, una ráfaga en paralelo pasaba la comprobación de «no bloqueado» antes de registrarse ningún fallo y superaba el umbral. `NOWAIT` evita que alguien sature los workers esperando el candado de una cuenta; quien no lo obtiene recibe el mismo 401 genérico tras una verificación de hash ficticia (mismo costo, para no delatar que la cuenta existe). `NO KEY UPDATE` y no `UPDATE` porque el evento del intento rechazado inserta una fila con llave foránea al usuario (`FOR KEY SHARE`) y con `FOR UPDATE` esa inserción esperaba al otro intento (defecto hallado con una prueba de dos logins reales; sin el cambio esperaba 1 s). Solo se trata como intento simultáneo el error SQLSTATE `55P03` (candado no disponible); cualquier otro error de base de datos se propaga. Consecuencia aceptada: un intento legítimo que coincida exactamente con otro contra la misma cuenta puede recibir 401 y debe reintentar; el límite de tasa acota cuántos puede provocar un atacante. (Hallazgos de la revisión de seguridad automática del commit 5.)
+- **Se mantiene `FOR NO KEY UPDATE NOWAIT`** (decisión de Vul tras comparar con «reservar el intento»: un `UPDATE … RETURNING` que incrementa `intentos_fallidos` antes de verificar). **Se evaluará reservar el intento en el sprint 6 si el evento `motivo = intento_simultaneo` muestra colisiones reales** (consultar la bitácora: `despues->>'motivo' = 'intento_simultaneo'`). Lo que habría que resolver al cambiar: pérdida de la atomicidad contador+evento en una transacción, devolver la reserva en un login correcto, marcar el bloqueo en el último intento permitido y los intentos contados por un worker que muere.
+- **Límite de tasa**: ventana fija de 1 minuto sobre la caché en base de datos (`django_cache`, tabla creada por migración), una ranura por intento con `cache.add` (atómico entre workers; `cache.incr` no lo es). Se evalúa antes de calcular cualquier hash y responde 429 con `Retry-After`. Limitación conocida: una ventana fija permite hasta el doble del límite alrededor del cambio de minuto. Los identificadores se guardan hasheados.
+- **IP real**: `TrustedProxyHeadersMiddleware` descarta `X-Forwarded-*`, `Forwarded` y `X-Real-IP` si la conexión no viene de `TRUSTED_PROXY_CIDRS`; DRF toma la IP de `X-Forwarded-For` con `NUM_PROXIES` (`API_NUM_PROXIES`). Caddy sobrescribe esas cabeceras que mande el cliente. Por defecto se confía en rangos privados; en producción conviene acotarlo a la subred de Docker.
+- **`config.settings.prod` rechaza `TRUSTED_PROXY_CIDRS` amplio**: si conserva el valor por defecto (todos los rangos privados), está vacío, tiene un CIDR inválido o una red más ancha que /16 (IPv4) o /64 (IPv6). Cómo acotarlo a la subred de Docker: `docs/guia-instalacion.md`.
+- **Permisos por rol** (commit 7, `apps/accounts/permissions.py`): enum `Accion` y una única tabla `ACCIONES_POR_ROL` que refleja §3 (lista explícita por rol: una acción nueva que no se agregue queda denegada para todos). Clases DRF: `requiere(Accion.X)` (sesión + sin cambio de contraseña pendiente + rol con la acción), `AllowAny` (público) e `IsAuthenticated` (cualquier rol; solo `me` y `cambiar-contrasena`). **Una vista que no declara permisos se deniega** (`DenegarPorDefecto`). `GENERAR_REPORTES` es una acción aparte aunque hoy coincida con `CONSULTAR` (§3 une los reportes a la consulta; §7 los da a los 3 roles); `RECIBIR_CORREOS_CADUCIDAD` está en la tabla porque §3 la lista, pero no la usa ningún endpoint (la usará el proceso diario).
+- **Política de respuesta, igual para todos los recursos**: sin sesión → 401 `no_autenticado`; con sesión pero el rol no tiene la acción → **403** `permiso_denegado` (nunca 404 para ocultar recursos); cambio de contraseña pendiente → 403 `debe_cambiar_contrasena`; CSRF inválido → 403 `csrf_invalido`. Todos los errores de la API tienen la forma `{"codigo": ..., "detalle": ...}` (validación: `datos_invalidos`, 405: `metodo_no_permitido`, etc.; `apps/core/exceptions.py`).
+- **Las denegaciones de permiso no generan evento** (§6.9 no define el tipo): solo una línea de log (`Permiso denegado: usuario_id=… rol=… accion=… metodo=… ruta=…`), sin correo, sesión ni token.
+- **Cada sprint debe registrar sus endpoints** en `REGISTRO` (`apps/accounts/tests/test_permission_coverage.py`): una prueba recorre todas las rutas y falla si una vista no declara permisos, si una ruta no está registrada o si sus métodos o su política no coinciden con lo registrado. La vista `schema` no es DRF y está en `VISTAS_NO_DRF`.
+- **Gestión de usuarios** (commit 8; `/api/v1/usuarios/`, solo ADMIN con la acción `GESTIONAR_USUARIOS`): listar (paginado con `pagina` y `tamano`, 25 por defecto y máximo 100; filtros `rol`, `activo`; búsqueda `buscar` en nombre, correo y número de nómina; `orden` solo por nombre, correo, rol, activo o creado_en, nunca por columnas sensibles), detalle, crear, editar (solo nombre, correo y numero_nomina), cambiar rol, desactivar, reactivar y restablecer contraseña. **No hay borrado físico ni desbloqueo manual** (`DELETE` responde 405). Los serializadores rechazan campos desconocidos (p. ej. un `rol` dentro de una edición). Las respuestas muestran `id, nombre, correo, numero_nomina, rol, activo, creado_en, bloqueado_hasta` (solo lectura); nunca el hash, `intentos_fallidos` ni contraseña alguna.
+- **Modelo de contraseñas** (decisión del equipo, commit 9b; reemplaza a las contraseñas temporales y al cambio forzado del commit 8): **solo el administrador asigna y restablece contraseñas**. El administrador **escribe** la contraseña (campo `contrasena` del cuerpo) al crear un usuario y al restablecerla; pasa por los validadores y **no se devuelve en ninguna respuesta, ni va a eventos, logs, mensajes de error o trazas** (pruebas con `caplog`, con la tabla de eventos y con las respuestas, incluso cuando una operación falla a la mitad). Los mensajes de los validadores describen la regla incumplida, nunca repiten la contraseña. **No hay cambio forzado al entrar**: se eliminaron `debe_cambiar_contrasena` (campo, migración `accounts.0004`, permiso por defecto de DRF, código de error y campo de `me`), `generar_contrasena_temporal` y `contrasena_temporal`. **Cada instalación tendrá dos administradores.**
+- **Restablecer, reactivar y desactivar no tocan `intentos_fallidos` ni `bloqueado_hasta`** (sería un desbloqueo manual, descartado). Una cuenta bloqueada a la que se le restablece la contraseña sigue bloqueada hasta que venza (prueba con reloj controlado).
+- **Reglas de administradores**: un administrador no puede desactivarse, cambiarse el rol ni **restablecerse la contraseña** a sí mismo desde la administración (403 `auto_modificacion_no_permitida`; decisión de Vul): la vía propia es `cambiar-contrasena`, que pide la contraseña actual. Sí puede editar sus propios datos. Cada servicio **revalida al actor** dentro de su transacción: dos administradores que operan a la vez se serializan y el sistema nunca queda sin un administrador activo (si el actor dejó de serlo mientras se procesaba: 403 `permiso_denegado`; la comprobación de «último administrador» → 409 `ultimo_administrador` queda como defensa adicional). **Cómo se serializan está en «Candados de la administración»**: la primera versión bloqueaba todas las filas de administradores activos; esa técnica quedó **superada** (ahora un candado consultivo L0 más la fila del objetivo, para que el login de un administrador no choque con la administración). Pruebas con hilos: dos administradores que se degradan o desactivan mutuamente, ciclo de tres, y dos envíos simultáneos del mismo formulario; sin el candado fallan.
+- **Sesiones**: al **desactivar** o **restablecer la contraseña** sube `sesion_version` (ver «Versión de sesión») y las sesiones anteriores quedan inválidas para siempre; además se borran de `django_session`, **al confirmar la transacción**, como limpieza (`transaction.on_commit(robust=True)`). **Al cambiar el rol la sesión sigue abierta** y el rol se lee de la base en cada petición: los permisos nuevos rigen desde la siguiente.
+- **Normalización**: correo en minúsculas y sin espacios; `numero_nomina` sin espacios en los extremos y vacío → `NULL`; nombre obligatorio, máximo 150. Correo y `numero_nomina` son únicos **sin distinguir mayúsculas** (índices sobre `Lower(...)`; migración 0003 de accounts). Duplicados → 400 `correo_duplicado` / `numero_nomina_duplicado`, incluso con dos envíos simultáneos (se captura `IntegrityError` por nombre de restricción).
+- **Eventos de usuarios**: `USUARIO_CREADO`, `USUARIO_EDITADO` (nuevo), `USUARIO_ROL_CAMBIADO`, `USUARIO_DESACTIVADO`, `USUARIO_REACTIVADO` (nuevo) y `USUARIO_CONTRASENA_RESTABLECIDA`. El campo `usuario` del evento es quien actúa; el afectado se identifica en la descripción (`correo (id N)`), porque `Evento` no tiene otra FK a usuario. Una operación sin cambio real (mismo rol, ya inactivo, edición idéntica…) no escribe ni evento. Los tipos nuevos de usuarios son solo esos dos (`USUARIO_EDITADO`, `USUARIO_REACTIVADO`): no se agrega ningún tercero, por el criterio de pocos eventos (decisión de Vul; ya no queda pendiente).
+- **Lectura de la bitácora** (commit 9; `GET /api/v1/bitacora/eventos/`, solo ADMIN con `VER_BITACORA`): solo lectura (`POST`, `PUT`, `PATCH` y `DELETE` → 405 para el administrador; técnico y espectador → 403 en todo). **Consultar la bitácora no genera evento.** Respuesta `{"next": url|null, "results": [...]}` con `Cache-Control: no-store`; cada evento trae `id`, `ocurrido_en` (UTC, `Z`), `ocurrido_en_local` (zona de la instalación, con su desfase), `usuario` (`{id, nombre}` o `null` = Sistema), `tipo`, `descripcion`, `antes`, `despues`, `ip` e `instrumento_id`.
+- **Paginación por cursor (por claves)**: orden `(ocurrido_en desc, id desc)`; el cursor es la posición del último evento entregado y la consulta usa `ocurrido_en <= t AND (ocurrido_en < t OR id < i)` con `LIMIT n+1`: **sin `COUNT(*)` ni `OFFSET`**, así leer la página 3 000 cuesta lo mismo que la primera. Tamaño 25 por defecto, máximo 100 (`tamano`; un valor inválido, menor que 1 o mayor que 100 → 400 `datos_invalidos`, ya no se usa el valor por defecto; ver «Errores y validaciones unificados»). Solo hacia adelante (no hay `previous` ni total). Los eventos que llegan durante un recorrido son más recientes que cualquier cursor, así que no producen duplicados ni omisiones de lo ya existente; no aparecen en ese recorrido. Limitación inherente: un evento confirmado tarde con una marca de tiempo anterior a la posición actual del cursor no se vería en ese recorrido. El cursor no está firmado: alterarlo solo cambia desde dónde se lee (un cursor mal formado → 400).
+- **Filtros**: `desde` y `hasta` (`AAAA-MM-DD`, fechas **locales** de la instalación convertidas a UTC con `TIME_ZONE`; `hasta` incluye todo ese día, es decir, `< medianoche local del día siguiente`, de modo que un día con cambio de horario mide 23 o 25 horas), `usuario` (id o `sistema`), `tipo` (repetible o separado por comas) e `instrumento_id`. Cualquier valor inválido → 400 `datos_invalidos`. Si una zona horaria tuviera la medianoche dentro de un salto de horario, el inicio del día sigue la regla de `zoneinfo`.
+- **Índice**: `evento_ocurrido_id_idx` sobre `(ocurrido_en desc, id desc)` reemplaza al de `ocurrido_en` solo (su primer campo cubre los rangos de fechas). Migración `audit.0004`.
+- **Lo que nunca sale**: la consulta trae del usuario solo `id` y `nombre` (`only()`), así que el hash no sale de la base; `antes`/`despues` se filtran a la lista blanca también al **leer** (defensa en profundidad si una fila entró por otra vía); no hay N+1 (el usuario viene en la misma consulta con `select_related`).
+- **Rendimiento** (100 000 eventos sembrados; `apps/audit/tests/test_bitacora_rendimiento.py`): `EXPLAIN` confirma que la primera página, una página con filtros de fecha y tipo (con y sin cursor), los filtros de usuario, `sistema`, instrumento y tipos y una página profunda **no hacen `Seq Scan`** sobre `audit_evento`. Presupuesto fijado: **300 ms por petición de punta a punta** (mediana de 5, dentro del proceso de pruebas con PostgreSQL real; margen holgado para CI). Medido el 9-oct-2026: primera página 5 ms, con filtros 9 ms, con cursor 9 ms.
+- **`cambiar-contrasena` es solo para ADMIN** (acción nueva `CAMBIAR_PROPIA_CONTRASENA`, en la tabla de permisos y en la matriz de pruebas: solo ADMIN; técnicos y espectadores reciben 403 `permiso_denegado` y no pueden cambiar la suya por ninguna vía de la API). Mantiene: contraseña actual obligatoria, nueva distinta de la actual, 5 intentos por minuto, validadores, invalidación de las otras sesiones y evento `USUARIO_CONTRASENA_CAMBIADA` (sin antes/después: nunca datos de la contraseña). Las contraseñas se limitan a 256 caracteres para no mandar entradas enormes a Argon2.
+- **Restablecer** la contraseña de otro usuario, incluido el otro administrador: acción `GESTIONAR_USUARIOS`, **sin reautenticación** (la reautenticación propuesta quedó descartada). Un administrador no puede restablecer la propia por ahí (403 `auto_modificacion_no_permitida`). No modifica `intentos_fallidos` ni `bloqueado_hasta`, cierra las sesiones del afectado y escribe `USUARIO_CONTRASENA_RESTABLECIDA` (actor, afectado en la descripción, sin contraseña).
+- **Comandos de servidor**: `manage.py crear_admin` (contraseña interactiva, dos veces y sin eco; `CREAR_ADMIN_CONTRASENA` solo para instalaciones automatizadas: el comando avisa de que se use y **el script de instalación debe borrarla del `.env`** tras usarla) y `manage.py restablecer_admin <correo>` (recuperación: contraseña interactiva, pasa los validadores, solo para usuarios de rol ADMIN, no toca contadores ni bloqueo, cierra sus sesiones y escribe `USUARIO_CONTRASENA_RESTABLECIDA` con usuario Sistema y la descripción «por comando de servidor»).
+- **Riesgos aceptados del modelo**: el administrador conoce las contraseñas de los usuarios y debe tratarlas con cuidado; si se pierde el acceso de los dos administradores, la recuperación depende de alguien con acceso al servidor (`restablecer_admin`). Ver `docs/guia-instalacion.md`.
+- `logout` siempre responde 204 (idempotente, también sin sesión).
+- Las sesiones vencidas no se borran solas de `django_session`: falta programar `manage.py clearsessions` (candidato: `proceso_diario`, sprint 4).
+- Migraciones y pruebas con el rol `migrator`; el servidor con `app`.
+- En prod, `SECURE_SSL_REDIRECT` exime `/api/v1/health/` para que el healthcheck interno (HTTP) no reciba 301.
+
+## Pruebas transversales de seguridad (commit 10)
+- **pip-audit en `make ci`** (`make audit`): audita `requirements.txt` y `requirements-dev.txt` con `--require-hashes --disable-pip`; si encuentra una vulnerabilidad, `make ci` falla. `pip-audit` está en las dependencias de desarrollo (bloqueado con hashes, solo wheels). Verificado con un control: `django==3.2.0` produce 64 hallazgos y salida distinta de cero. Necesita red para consultar la base de avisos.
+- **Cobertura de `config/settings/prod.py` incluyendo subprocesos**: la validación de producción ocurre al importar el módulo, así que las pruebas lo importan en un intérprete nuevo. `conftest.py` instala un `sitecustomize` temporal que llama a `coverage.process_startup()` (el contenedor es de solo lectura) y `pyproject.toml` activa `parallel = true`; pytest-cov combina los archivos. Resultado: `prod.py` pasa de 0 % medido a 100 % y el total del backend queda en 100 % (no se excluye ningún archivo).
+- **`Cache-Control: no-store` en todo `/api/`**: antes solo lo llevaban las respuestas correctas de las vistas; los errores (401, 403, 404, 405), el rechazo de CSRF y las redirecciones no. `NoStoreApiMiddleware` (el más exterior) lo agrega a todas.
+- **`X-Frame-Options` en producción**: `X_FRAME_OPTIONS = "DENY"` no hacía nada porque faltaba `XFrameOptionsMiddleware` (en el stack real Caddy aporta `frame-ancestors`, por eso no se notaba). Lo detectó la prueba contra la API en modo producción; ya está agregado.
+- **Cabeceras y cookies** se prueban en tres niveles: (1) `settings.prod` en un intérprete aparte con una petición declarada HTTPS por un proxy de confianza (`config/tests/test_security_headers_prod.py`); (2) a través de Caddy contra la API de desarrollo (HTTP): `nosniff`, `Referrer-Policy`, `frame-ancestors`, `no-store`, sin HSTS; (3) contra una API real en modo producción (gunicorn) con `X-Forwarded-Proto: https`: HSTS, `X-Frame-Options`, cookies `Secure` con prefijo `__Host-`, sin `Domain`, y sin cookies en el 401 del login (`proxytests/test_cabeceras_cookies.py`).
+- **Verificador de contenedores** (`deploy/verificar_contenedores.sh`, dentro de `make test-proxy`; `make check-containers` sobre desarrollo): `docker inspect` comprueba sin root, `cap_drop ALL`, `no-new-privileges`, no privilegiado, sin socket de Docker, sistema de archivos de solo lectura (api, web, proxy), ningún puerto publicado salvo el del proxy en `127.0.0.1`, volumen persistente de la base y límite de memoria de `api`. Verificado con un control (contenedores como root y con puerto abierto → falla).
+- **`docs/seguridad-checklist.md`** lista cada control con su evidencia (prueba o comando); `config/tests/test_security_checklist.py` falla si cita una prueba o un `make` que no existe (verificado con una referencia inventada).
+- **Stack de `test-proxy`**: la API de desarrollo de ese stack usa `LOGIN_RATE_PER_IP=40` (el valor real sigue siendo 20) para que las pruebas funcionales, que inician sesión desde la misma IP, no agoten el límite antes de las pruebas de límite de tasa; el límite por IP+correo sigue siendo 5.
+- **Prueba de `settings.prod` con base de datos real**: la contraseña del rol `app` en las pruebas es la de ejemplo, que producción rechaza con razón; el guion de la prueba arranca con una contraseña «válida» para la validación e inyecta la real en `DATABASES` antes de abrir ninguna conexión.
+
+## Valores provisionales para confirmar
+| Valor | Provisional | Variable |
+| --- | --- | --- |
+| Longitud mínima de contraseña | 10 | `PASSWORD_MIN_LENGTH` |
+| Intentos fallidos antes de bloquear | 5 | `LOGIN_MAX_FAILED_ATTEMPTS` |
+| Duración del bloqueo | 15 min | `LOGIN_LOCKOUT_MINUTES` |
+| Límite de login por IP + correo | 5 por minuto | `LOGIN_RATE_PER_IP_EMAIL` |
+| Límite de login por IP sola | 20 por minuto | `LOGIN_RATE_PER_IP` |
+| Cierre de sesión por inactividad | 30 min | `SESSION_IDLE_MINUTES` |
+| Espera máxima de candados en administración | 5000 ms | `ADMIN_LOCK_TIMEOUT_MS` |
+| Cambios de contraseña por minuto y usuario | 5 | `PASSWORD_CHANGE_RATE_PER_USER` |
+| Vida máxima absoluta de la sesión (decisión de Vul) | 12 h | `SESSION_ABSOLUTE_HOURS` |
+| HSTS en producción (empieza corto; ver `docs/guia-instalacion.md`) | 1 h | `HSTS_SECONDS` |
+
+## Correcciones de la revisión del sprint 1
+Decisiones de Vul: (1) la sesión tiene una vida máxima absoluta de 12 horas, configurable; (2) correo y `numero_nomina` solo con caracteres ASCII; (3) la base de datos en una red `internal: true` y solo `api` con salida.
+- **Vida máxima absoluta de la sesión** (`SESSION_ABSOLUTE_HOURS`, 12 por defecto): la inactividad (30 min) renueva la ventana, pero no más allá de 12 h desde el inicio de sesión. El inicio se sella en la sesión con `user_logged_in` (cubre el login real y `force_login`); `AbsoluteSessionMiddleware` borra la sesión vencida y la trata como anónima. Una sesión sin marca de inicio no se acepta (falla cerrado). Cambiar la contraseña no extiende la ventana; volver a iniciar sesión sí la reinicia. Expirar no genera evento (criterio de `CLAUDE.md`).
+- **Correo y `numero_nomina` solo ASCII**: se validan en `limpiar_campos` (servicios). `.lower()` de Python y `LOWER()` de PostgreSQL difieren fuera de ASCII (p. ej. la `İ` turca), así que dejarlos pasar rompía la unicidad sin distinguir mayúsculas. El nombre conserva acentos y eñes. Esa primera versión no tenía restricción en la base; **quedó superada** por los `CHECK` `usuario_correo_ascii` y `usuario_nomina_ascii` de `accounts.0005` (ver «Errores y validaciones unificados»).
+- **`validate_production`** rechaza además `DJANGO_ALLOWED_HOSTS` con `*`, `DB_PASSWORD` vacío y proxies de confianza que no sean redes privadas (incluido el rango IPv4 mapeado `::ffff:0:0/96`). La lista de proxies por defecto vive solo en `config/settings/guards.py`: el compose y `.env.example` ya no la repiten.
+- **HSTS corto por defecto** (`HSTS_SECONDS=3600`, `HSTS_INCLUDE_SUBDOMAINS=false`, sin preload): un error de HTTPS se corrige en una hora, no en un año. Cuándo subirlo: `docs/guia-instalacion.md`.
+- **Parsers de DRF solo JSON**: formularios y multipart reciben 415 `tipo_no_soportado` (antes se aceptaban sin que nada los usara).
+- **Límite de tasa con HMAC**: el identificador (IP+correo) se protege con HMAC-SHA256 y `SECRET_KEY`; un SHA-256 sin clave se revertía con un diccionario de correos o IP. Rotar `SECRET_KEY` reinicia los contadores (ventanas de un minuto).
+- **`Evento`**: `save()` fuerza `force_insert` (con un pk asignado Django intentaba un UPDATE de esa fila) y `Meta.base_manager_name = "objects"` hace que `_base_manager` sea el manager protegido (migración `audit.0005`). La base de datos sigue siendo la defensa frente a `app`; el dueño (`migrator`) puede saltarse el código con SQL directo, riesgo aceptado y probado con ambos roles.
+- **Redes del compose**: `internal` (`internal: true`) para `db`, `web`, `migrate`, `test` y el tráfico entre servicios; `egress` solo para `api`; `edge` solo para publicar el puerto del proxy. **Límite verificado**: un puerto publicado no funciona desde una red `internal`, así que el proxy necesita `edge`. Se le desactivó el NAT (`enable_ip_masquerade=false`), pero en Docker Desktop (Windows) el proxy **sí alcanza internet** (se midió); en un servidor Linux el NAT desactivado debería impedirlo, sin verificar aquí. Para cerrarlo del todo haría falta una regla de firewall del host (`DOCKER-USER`). `make audit` usa `docker run` (red por defecto) porque necesita internet.
+- **Hook `proteger-archivos.sh`**: el archivo estaba guardado con finales de línea CRLF (bash lo rechazaba con un error de sintaxis) y `jq.exe` de Windows imprime `\r\n`, lo que escondía el nombre; además comparaba rutas con `/` solo. Ahora normaliza `\`, mayúsculas, `.` y `..`, cubre `.env*` (menos `.env.example`, plantilla sin secretos que se edita) y `secrets/`, y falla cerrado sin `jq`, con entrada ilegible o sin ruta. Limitación: solo cubre `Edit|Write`; un `Bash` con `sed -i` no pasa por él.
+- **`make` y Git Bash**: `export MSYS_NO_PATHCONV := 1` en el `Makefile`. Con un `CURDIR` estilo POSIX (`/c/Users/...`), Git Bash convertía `-v /c/ruta:/app` en una lista de rutas de Windows y Docker creaba la carpeta `backend;C` en el repo (reproducido; con la variable no se crea). Se quitaron los `//` de `-w` y `--config`.
+- **`proxytest.sh`**: `.proxytest.env` ya está en `.gitignore` y la clave del administrador viaja por el entorno del comando (`-e NOMBRE` sin valor), no en la línea de comandos.
+
+## Candados de la administración (el login ya no choca con la administración)
+Antes, cada operación bloqueaba `FOR NO KEY UPDATE` **todas** las filas de administradores activos y calculaba Argon2 y el barrido de sesiones con esos candados puestos. El login usa `FOR NO KEY UPDATE NOWAIT` sobre su fila, así que el login de un administrador recibía el 401 genérico (`intento_simultaneo`) mientras el otro administraba. Medido con Argon2 real: la ventana de `crear_usuario` era de **66 ms** (máx. 93) y la de `restablecer_contrasena` de **75 ms** (máx. 84).
+- **Orden de candados** (`apps/accounts/locks.py`; siempre en este sentido): **L0** `pg_advisory_xact_lock(0x4D455452, 1)` («conjunto de administradores», espacio de nombres fijo «METR»); **L1** fila del usuario `FOR NO KEY UPDATE` (el login: la suya, con NOWAIT; administración: solo la del objetivo, con espera acotada); **L2** inserción del evento. El login **no** toma L0 y administración **no** bloquea la fila del actor ni la de los demás administradores. Sin interbloqueos: el login nunca pide L0; una operación espera a lo sumo un Argon2 de login sobre la fila de su objetivo.
+- **Fuera de la transacción** (sin candados): campos, validadores, `make_password`, una lectura previa de duplicados y del objetivo. **Dentro** (con candados): actor vigente, objetivo fresco, duplicados, reglas de último administrador y de no tocarse a sí mismo, y, en `restablecer`, si el nombre o el correo del objetivo cambiaron se vuelven a pasar los validadores (el hash no depende de ellos). `cambiar_contrasena`: la «versión» es la contraseña guardada; si ya no es la verificada, 409 `contrasena_modificada` en vez de pisar un cambio ajeno.
+- **`lock_timeout`** (`ADMIN_LOCK_TIMEOUT_MS`, 5000 por defecto): `SET LOCAL` en cada operación con espera; si vence, la transacción entera se revierte y se responde 503 `reintentar` sin estado parcial.
+- **Regla**: toda ruta que escriba `rol` o `activo` toma L0, incluida la creación de usuarios (y por tanto `crear_admin`). Está escrita en el modelo `Usuario` y la comprueba `test_admin_lock_rule.py` con `ast`: falla si otra función escribe esos campos o si una permitida deja de tomar L0. Con L0 los administradores se leen sin candado de fila; eso solo vale mientras nada más cambie esos campos.
+- **Sesiones al confirmar**: desactivar, reactivar y restablecer programan el borrado de filas con `transaction.on_commit(..., robust=True)`. Es **solo limpieza**: la invalidación ya no depende de ningún borrado (`sesion_version`, ver «Versión de sesión»). Un fallo del borrado se registra (`usuario_id` y tipo de error, nada más) y no revierte la operación. Con 300 sesiones el barrido cuesta ~2 ms.
+- **Origen de `intento_simultaneo` (cambió)**: antes, cualquier operación de administración. Ahora solo (a) otro login sobre la **misma** cuenta en curso, o (b) una operación de administración cuyo **objetivo** es esa cuenta, durante su fase de aplicar. Un administrador que administra a otros ya no hace fallar el login de los demás. Sigue vigente la decisión de mantener `NOWAIT` (alternativa «esperar» descartada).
+- **Ventana medida después** (misma máquina y prueba): `crear_usuario` **4,2 ms** (máx. 5,4), `restablecer_contrasena` 12,0 ms (máx. 13; incluye el barrido de sesiones posterior al commit, ya sin candados), `cambiar_rol` 2,7 ms y `desactivar`+`reactivar` 3,6 ms.
+- **Carreras que quedan y por qué son aceptables**: (1) login contra una operación sobre su propia cuenta en la fase de aplicar (milisegundos): 401 genérico, reintentar; (2) *restablecer contra un login ya verificado en vuelo* **no** es una carrera: el login retiene la fila hasta confirmar y el restablecimiento espera; si entra primero, el login ve el hash nuevo (se comprobó con ambos órdenes, para administrador y técnico); la sesión que ese login crea queda inservible por el hash de sesión aunque `SessionMiddleware` la guarde después; (3) una sesión creada con la contraseña nueva en los milisegundos entre el commit y el barrido se borra y hay que volver a entrar; (4) hash calculado para una operación que falla dentro (duplicado, actor no vigente): ~100 ms de CPU desperdiciados.
+- Pruebas: `apps/accounts/tests/test_admin_concurrency.py` (hilos y `threading.Event`, sin `sleep`), `test_sessions_after_commit.py` y `test_admin_lock_rule.py`.
+
+## Errores y validaciones unificados
+- **Sobre de error**: `{codigo, detalle}` y, solo cuando el error es de campo, `campos` (`{nombre_campo: [mensajes]}`, p. ej. `campos.contrasena_actual`). Es la forma de **todo** `datos_invalidos`, venga de un serializador (`core/exceptions.py`) o de un servicio. `detalle` es siempre un texto; antes, en los errores de serializador, era el diccionario de campos (ahora está en `campos`).
+- **`ErrorDeUsuario` es una `APIException`** (`estado`, `codigo`, `detalle` y `campos` se conservan): las vistas de administración y `cambiar-contrasena` ya no capturan nada; lo traduce el manejador de excepciones. **`iniciar_sesion` no lanza** en un fallo: el contador y `SESION_FALLIDA` se confirman con la transacción y la respuesta es 401 (pruebas con transacciones reales y una prueba con `ast` de que solo contiene el `raise` pelado de errores de base de datos).
+- **Códigos eliminados** (ahora todos son `datos_invalidos` con `campos`): `contrasena_actual_incorrecta` → `campos.contrasena_actual`; `contrasena_repetida` → `campos.contrasena_nueva`; `contrasena_invalida` → `campos.contrasena_nueva` (mensajes de los validadores, uno por regla). Códigos nuevos: `contrasena_modificada` (409, la contraseña cambió entre verificarla y aplicar el cambio) y `reintentar` (503, no se obtuvo un candado a tiempo; la operación no se aplicó).
+- **Ajuste propio para `cambiar-contrasena`**: `PASSWORD_CHANGE_RATE_PER_USER` (5 por minuto y por usuario). Ya no reutiliza `LOGIN_RATE_PER_IP_EMAIL`.
+- **Bitácora, `tamano`**: no entero, menor que 1 o mayor que 100 → 400 `datos_invalidos` con `campos.tamano`. Ya no se recorta a 100 ni se usa 25 en silencio.
+- **ASCII también en la base de datos**: `CHECK` `usuario_correo_ascii` y `usuario_nomina_ascii` (`accounts.0005`; la nómina que no existe es NULL, nunca vacía). La migración se detiene con un mensaje claro si ya hubiera usuarios no ASCII. Pruebas contra la base real, incluida la coherencia entre `.lower()` de Python y `LOWER()` de PostgreSQL para los 127 caracteres ASCII y entre los índices únicos y la normalización.
+- **Contrato OpenAPI**: `@extend_schema` en todas las vistas (sobre `Error`, estados por operación, `operationId` explícitos, esquema de autenticación por cookie); `make schema` (parte de `make ci`) corre `spectacular --validate --fail-on-warn`; `apps/core/tests/test_openapi_contract.py` comprueba el contenido (sobre, estados, límites de `tamano`, contraseñas solo de escritura, códigos eliminados ausentes).
+- **Migraciones con datos** (`apps/core/tests/test_migrations_with_data.py`, una base propia por prueba): `accounts.0002` (vacíos y solo espacios → NULL; con duplicados la migración falla limpia y no deja estado a medias), `accounts.0003`, `audit.0003` (se niega con filas `AVISO_*`, pasa sin ellas, conserva los eventos válidos y la restricción rechaza `AVISO_*`), `accounts.0004` (ningún dato de ningún usuario cambia; reversible, la columna vuelve en `false`) y `accounts.0005`.
+- **Hallazgo de la revisión automática («fail-open» en el cierre de sesiones)**: confirmado y **resuelto** con `sesion_version` (ver «Versión de sesión»). Con el borrado fallando al desactivar, reactivar al usuario antes de que la sesión caducara la hacía valer otra vez (200).
+
+## Versión de sesión (las sesiones antiguas no reviven)
+Decisión de Vul tras el hallazgo anterior. La invalidación de sesiones ya no depende de ningún borrado de filas.
+- **`Usuario.sesion_version`** (entero, 0 por defecto, migración `accounts.0006`). Entra en el hash de sesión: `get_session_auth_hash()` y `get_session_auth_fallback_hash()` (las claves de `SECRET_KEY_FALLBACKS`) calculan el HMAC de `contraseña:versión`.
+- **Sube** con un `UPDATE` atómico (`F("sesion_version") + 1`, `_invalidar_sesiones_anteriores`) al **desactivar** y al **restablecer la contraseña**, dentro de la misma transacción y bajo los mismos candados (L0 y la fila del objetivo). Una operación que se revierte no la sube. Reactivar, cambiar el rol y editar no la tocan: la sesión anterior a una desactivación ya está muerta. `cambiar-contrasena` no la usa: cambia el hash de la contraseña y conserva la sesión actual.
+- **Efecto**: una sesión anterior a desactivar y reactivar, o a restablecer (incluso a restablecer la **misma** contraseña), recibe 401 aunque el borrado esté apagado o falle; una creada después es válida. También queda muerta la sesión de un login que terminó justo antes de la operación y cuya sesión `SessionMiddleware` guarda después.
+- **Nunca se expone**: no está en los serializadores, `sanitize.py` la rechaza (no es un campo permitido de `antes`/`despues`), no se registra en logs y no aparece en el contrato OpenAPI (pruebas en `test_session_version.py`). Una prueba con `ast` fija que solo `desactivar_usuario` y `restablecer_contrasena` la suben, con `F()` y bajo L0.
+- **Despliegue**: al aplicar este cambio **se cierran las sesiones existentes una vez**, porque la fórmula del hash de sesión cambia. Los usuarios deben volver a iniciar sesión (también está en `docs/guia-instalacion.md`).
+
+## Decisiones de Vul (cierre del commit 5)
+- **No hay desbloqueo manual de cuentas**: ni endpoint, ni comando `desbloquear_usuario`, ni evento `USUARIO_DESBLOQUEADO`. Una cuenta bloqueada solo se libera cuando vence `bloqueado_hasta`. **Consecuencia**: una cuenta que sea objetivo de ataques repetidos puede permanecer bloqueada de forma intermitente (el atacante la vuelve a bloquear al vencer). **Mitigaciones**: evento `CUENTA_BLOQUEADA` en la bitácora (permite detectarlo), límite de tasa por IP e instalación solo en red interna o VPN.
+- **El bloqueo es por cuenta** (no por IP+cuenta).
+- **Instalación solo en red interna o VPN**, nunca expuesta directo a internet. La guía de instalación (sprint 6) debe decirlo; el límite de tasa y el bloqueo asumen un atacante con pocas IPs.
+- **Frontend (commit 11)**: el botón de login se deshabilita mientras se envía; el mensaje de error de login invita a reintentar (un intento duplicado puede recibir 401 por el `NOWAIT`); el token CSRF se obtiene de `/api/v1/auth/csrf/` y se envía en la cabecera `X-CSRFToken` (y se vuelve a pedir tras iniciar sesión, porque rota).
+
+## Riesgos aceptados
+- **Bloqueo de cuenta por terceros**: cualquiera que conozca un correo válido puede provocar el bloqueo de esa cuenta durante 15 minutos con 5 intentos fallidos (denegación de servicio dirigida). Se mitiga con el límite de tasa por IP, que reduce la velocidad desde una sola IP, pero no lo impide si el atacante usa varias IPs. Alternativas si resulta un problema: bloqueo progresivo, bloquear por IP+cuenta en vez de solo por cuenta, o un desbloqueo por el administrador (no incluido en el sprint 1).
+
+## Preguntas abiertas
+- **Reautenticación al restablecer la contraseña de otro usuario**: **descartada** por decisión del equipo (el administrador restablece sin reautenticación; ver «Modelo de contraseñas»). No queda ninguna pregunta abierta sobre contraseñas.
+- `numero_nomina`: **decidido** (DEFINICION v1.1 §5): opcional, `NULL` cuando no existe (nunca cadena vacía) y único cuando tiene valor (restricción parcial, sin distinguir mayúsculas). Ya no es una pregunta abierta.
+
+## Pendiente para la v1.2
+Comparado con `docs/DEFINICION.md` **v1.1** (9-oct-2026): la v1.1 ya recoge el modelo de contraseñas, las reglas de administradores, el criterio de eventos y la lista de tipos (sin `AVISO_*`), `numero_nomina`, `creado_en`, `ip`/`instrumento_id` del evento, la bitácora por cursor, los comandos de servidor, la red interna o VPN y el límite de memoria. **Lo que aún no contiene** (Vul lo incorpora a la v1.2; `DEFINICION.md` no se edita):
+
+**§3 y errores**
+- Separar `GENERAR_REPORTES` de `CONSULTAR` (la primera fila de §3 los une, §7 los da a los 3 roles) y aclarar que «Recibir correos de caducidad» es un atributo del rol que usará el proceso diario, no un permiso de API.
+- Forma del error: `{codigo, detalle}` y, si es de campo, `campos` (`{campo: [mensajes]}`); agregar los códigos `contrasena_modificada` (409), `reintentar` (503), `auto_modificacion_no_permitida` (403), `ultimo_administrador` (409), `correo_duplicado` / `numero_nomina_duplicado` (400) y `tipo_no_soportado` (415) a la lista de §3.
+
+**§5 Modelo**
+- Usuario: campo interno `sesion_version` (entero, nunca expuesto); correo y `numero_nomina` solo ASCII, también como `CHECK` en la base (`usuario_correo_ascii`, `usuario_nomina_ascii`); el nombre conserva acentos.
+
+**§6.9 Eventos**
+- Los eventos de gestión de usuarios identifican al afectado en la descripción (`correo (id N)`), porque `Evento` no tiene otra FK a usuario.
+- Bitácora: las fechas `desde`/`hasta` son locales de la instalación y `hasta` incluye todo el día; `tamano` inválido → 400 (`campos.tamano`), no se recorta ni se usa el valor por defecto.
+- `SESION_FALLIDA` con `despues = {"motivo": ...}`; **origen de `intento_simultaneo`**: otro login sobre la misma cuenta en curso, o una operación de administración cuyo objetivo es esa cuenta durante su fase de aplicar (un administrador que administra a otros ya no hace fallar el login de los demás).
+
+**§6.10 Cuentas y sesiones**
+- **Vida máxima absoluta de la sesión de 12 horas** desde el inicio de sesión (decisión de Vul), con su variable `SESSION_ABSOLUTE_HOURS`; una sesión sin marca de inicio no se acepta.
+- Las sesiones anteriores a desactivar o restablecer la contraseña quedan **inválidas para siempre** (`sesion_version`), no solo cerradas; el borrado de filas es limpieza.
+- Candados de la administración: L0 (conjunto de administradores) y fila del objetivo; `lock_timeout` → 503 `reintentar`.
+- Ampliar la tabla de valores de §6.10 con `ADMIN_LOCK_TIMEOUT_MS` (5000), `PASSWORD_CHANGE_RATE_PER_USER` (5 por minuto), `SESSION_ABSOLUTE_HOURS` (12) y `HSTS_SECONDS` (3600).
+
+**§8 Seguridad**
+- Argon2 con los parámetros por defecto de Django (≈ 100 MiB por verificación); cookie CSRF `HttpOnly`; CORS cerrado.
+- HSTS corto por defecto (1 h, sin `includeSubDomains` ni preload); la API solo acepta cuerpos JSON (415 para formularios y multipart).
+- Producción se niega a arrancar con `ALLOWED_HOSTS` con `*`, `DB_PASSWORD` vacío o `TRUSTED_PROXY_CIDRS` amplio o no privado.
+- Redes del compose: `db` en una red `internal: true`, solo `api` con salida; límite conocido del proxy en Docker Desktop (ver «Correcciones de la revisión del sprint 1»).
+- Límite de tasa con HMAC (`SECRET_KEY`) del identificador.
+
+**§13 Decisiones abiertas**
+- `numero_nomina` ya está decidido (opcional, único si existe) y el cierre de sesión no genera evento (decisión de Vul): no deben figurar como abiertos.
+
+## Decisiones tomadas por Claude Code (revisar)
+Decisiones que tomé en el modo autónomo sin consultarte, para que las revises. Cada una dice
+qué se decidió y por qué; si no te convence, se revierte con el commit que se indica.
+
+### Fase 1 – Pruebas deterministas
+- **Pruebas de límite de tasa contra el stack real: se alinea la ventana, no se toca el servidor.**
+  El límite cuenta en ventanas fijas de 60 s alineadas al reloj; el servidor del stack real no se
+  puede congelar, y cambiar el código de producción para facilitar una prueba habría sido peor. Las
+  pruebas que cuentan 429 (`proxytests/test_proxy_headers.py`) llaman a
+  `esperar_si_la_ventana_esta_por_terminar(necesario=N)` (`proxytests/ventana.py`): si quedan menos
+  de N segundos en la ventana actual, esperan a la siguiente (como mucho N segundos). Costo: una
+  espera ocasional de hasta ~25 s en `make test-proxy`. Una prueba estática
+  (`proxytests/test_ventana_de_tasa.py`) falla si una prueba que menciona 429 no la llama.
+- **Las pruebas dentro de la aplicación ya usaban el reloj controlado** (`clock`), salvo
+  `test_counter_is_shared_and_atomic_across_connections` (ventanas de 3600 s: un cambio de hora a
+  mitad de la prueba la partía); ahora usa `clock`.
+- **`make test-proxy` acepta `PROXYTEST_REPETIR=N` y `PROXYTEST_PYTEST_ARGS`** para repetir las
+  pruebas sobre el mismo stack. Entre repeticiones espera al comienzo de la siguiente ventana,
+  porque cada corrida agota el límite por IP (sin esa espera la corrida 2 fallaba: se vio).
+- **Resultado**: 10 corridas seguidas de las 16 pruebas de proxy en verde (612 s en total, la
+  mayor parte esperas entre ventanas) y 10 corridas seguidas de las 77 pruebas de límite de tasa de
+  la aplicación.
+- **`jq` solo en la etapa `test` de la imagen**: se comprobó en la imagen de producción
+  (`docker history`: 0 menciones; `dpkg -l`: sin `jq` ni `libjq`; sin `/usr/bin/jq`) y se fijó con
+  una prueba que analiza el `Dockerfile` por etapas (`test_jq_is_installed_only_in_the_test_stage_of_the_image`).
+
+### Fase 2 – Refactor sin cambio de comportamiento
+- **Pruebas: ayudantes y fixtures compartidos** (`refactor: pruebas con ayudantes compartidos`).
+  `apps/core/testing.py` (no es código de producción) reúne lo que usan varias apps: `Api`, las rutas
+  de autenticación, `UsuarioFactory`, `DEFAULT_PASSWORD`, `sesion_directa`, `peticion`, las
+  herramientas de hilos (`en_hilo`, `Retencion`, `esperar_bloqueo`) y `conectar_bd`. Las fixtures
+  comunes (`api`, `relaxed_rate`, `admin`, `api_admin`, `api_admin_directo`, `real_hasher`) están en
+  el `conftest.py` raíz; las propias de accounts (`usuario`, `ana`, `beto`, `carla`, `tecnico`,
+  `api_ana`, `cuentas`) en `apps/accounts/tests/conftest.py`, y las constantes y funciones que
+  comparten varios archivos de accounts en `apps/accounts/tests/ayudantes.py`. **Ninguna app importa
+  del `conftest.py` de otra ni de módulos de prueba de otra** (antes: 3 importaciones cruzadas).
+- **Duplicados eliminados**: `relaxed_rate` (×2), `admin` (×3), `api_admin` (×5, de dos clases
+  distintas: login real y sesión directa; ahora `api_admin` y `api_admin_directo`), `tecnico` (×2),
+  `ana`/`beto`/`carla` (×2), `real_hasher` (×3), `admin_api` (×2, ahora `api_ana`), `connect` y
+  `instantanea` (×2).
+- **Archivos de más de 600 líneas partidos por endpoint o servicio**: `test_usuarios_api.py` (795)
+  → `test_usuarios_api_{listar,crear_editar,acciones,seguridad}.py` y `test_usuarios_services.py`
+  (710) → `test_usuarios_servicios_{crear_editar,eventos,reglas,sesiones_y_fugas}.py`. Ninguna prueba
+  se tocó: solo se movió texto. **Antes: 1199 pruebas recogidas; después: 1199**, y el multiconjunto de
+  nombres con sus parámetros es idéntico (`pytest --collect-only` comparado con `diff`).
+- **Ruff**: `apps/core/testing.py` y `conftest.py` quedan exentos de `S101`/`S105`/`S106` (son
+  ayudantes de prueba) en `pyproject.toml`.
+
+- **Servicios de cuentas en un paquete** (`refactor: servicios de cuentas en un paquete`).
+  `apps/accounts/services.py` → `services/{__init__,autenticacion,usuarios}.py`; `services/__init__.py`
+  reexporta la API pública, así que vistas y comandos no cambian. `iniciar_sesion` queda en funciones
+  pequeñas (`_verificar`, `_registrar_resultado`, `_registrar_exito`, `_registrar_rechazo`,
+  `_rechazar_por_intento_simultaneo`). El reloj y el verificador de hash se pasan como argumentos
+  (`reloj=`, `verificar_hash=`); el resto de puntos de inyección (registro de eventos, lectura de la
+  fila con candado, cifrado, cierre de sesiones, comprobación de duplicados, alta en la base,
+  candado L0) viven en `puntos` y se cambian con `sustituir(...)` (módulos `autenticacion` y
+  `usuarios`). **Ya no hay `mock.patch` sobre atributos internos de services** (antes ~40 sitios);
+  la prueba del mensaje de un validador usa `AUTH_PASSWORD_VALIDATORS` real.
+- **Pruebas ast actualizadas** a las rutas nuevas (`test_admin_lock_rule.py`,
+  `test_error_unification.py`) y comprobadas con violaciones deliberadas, que ya revertí:
+  (1) función nueva que escribe `rol` sin L0 → falla `test_only_the_known_functions_write_rol_or_activo`;
+  (2) `desactivar_usuario` sin `_bloquear` → fallan `test_every_writer_takes_the_administrators_lock` y
+  la de `sesion_version`; (3) `raise` en el login → falla `test_iniciar_sesion_has_no_raise_of_business_errors`
+  (y 7 más). Antes y después: 1199 pruebas, esquema OpenAPI idéntico (`diff` vacío).
+- **gitleaks**: la lista de excepciones de `.gitleaks.toml` seguía los nombres de archivo anteriores a
+  la partición de las pruebas (`test_usuarios_api.py`, `recorrer(api_admin, ...)`); se actualizó a los
+  nombres nuevos sin ampliarla (misma línea, mismo archivo). Lo detectó `make ci` (secrets, 5 hallazgos
+  en el commit 59f51e0, falsos positivos de parámetros de consulta).
+
+### Fase 2C – Limpieza (sin cambio de comportamiento)
+- **Se quitó `respuesta()`** (vistas de accounts y audit): solo ponía `Cache-Control: no-store`, que
+  `NoStoreApiMiddleware` ya pone a toda respuesta de `/api/` (con pruebas); además `audit` importaba un
+  ayudante de vistas de `accounts`. Las vistas devuelven `Response(...)`.
+- **Constantes en un lugar**: `apps/core/constantes.py` (longitudes de nombre/nómina/correo/contraseña y
+  tamaños de página 25/100) en vez de literales repetidos en modelo, serializadores, servicios, vista
+  de usuarios y bitácora.
+- **`Rol` a nivel de módulo** (con alias `Usuario.Rol`) para que el `CheckConstraint` use `Rol.values`
+  en lugar de repetir la lista; `makemigrations --check`: sin cambios (misma condición en la base).
+- **Código muerto**: se buscaron definiciones sin uso en código de producción; solo quedan ganchos de
+  frameworks (`authenticate_header`, `get_*` de serializadores, esquema OpenAPI) y `create_superuser`,
+  que es una protección probada. Nada que borrar.
+- **Ancla de `query_params.dict()`**: prueba nueva (`?rol=ADMIN&rol=ESPECTADOR` rige el último valor);
+  cambiar a `getlist` será una decisión de producto, no un accidente. 1199 → 1200 pruebas.
+- **Regla de nombres**: dominio en español, infraestructura/utilidades genéricas en inglés; no se
+  renombró nada existente (documentada en `CLAUDE.md`, que también lista la estructura de rutas).
+- **Checklist**: la fila de cobertura decía ≥ 85 %; el umbral real de `make test` es 95 % (ramas) y
+  el README decía 85 %: corregidos.
+
+### Fase 3 – Integración continua y documentación
+- **Flujo de CI** (`.github/workflows/ci.yml`): tres trabajos en paralelo que ejecutan los mismos `make` de
+  `make ci` (calidad: lint+audit+secrets con historial completo; pruebas; proxy+esquema). Acciones fijadas por SHA
+  completo (`actions/checkout` v7.0.1, resuelto con `git ls-remote` el 10-oct-2026),
+  `permissions: contents: read`, `persist-credentials: false`, sin secretos, `concurrency` que cancela corridas
+  repetidas. **Sin caché de imágenes**: se probó guardar las base con `docker save` y fallaba
+  (`invalid reference format`: las imágenes fijadas solo por digest salen en `docker images` como `python:<none>`, y
+  `docker save` rechaza esa referencia). Se eliminó por completo, no se arregló: `docker load` de una imagen guardada
+  por ID no restaura tags ni RepoDigests, el `FROM …@sha256` vuelve a consultar el registro, y descargar frente a
+  cargar costó lo mismo (1,7 s frente a 2,3 s). Cargar imágenes de una caché en vez de descargarlas por digest
+  debilitaría el fijado y añadiría superficie de cadena de suministro. La capa de `pip install` tampoco se cachea. **No se ha ejecutado
+  en GitHub** (no hay push en esta sesión). Una prueba (`test_github_files.py`) falla si una acción no está fijada por
+  SHA, si el token gana permisos, si aparece `secrets.` o si `make ci` incluye un objetivo que el flujo no corre.
+- **Dependabot**: pip (`/backend`), npm (`/frontend`), docker (`/backend`, `/frontend`), docker-compose (`/deploy`)
+  y github-actions. `/frontend` aún no tiene `package.json`; hasta entonces esa entrada puede avisar.
+- **`.env` automático**: todo objetivo de `make` depende de `.env`, que se copia de `.env.example` si falta (con aviso de
+  que son valores de ejemplo). Antes `make up` fallaba con un mensaje. Probado en un directorio temporal.
+- **`decisiones.md` reconciliado**: las contradicciones internas se resolvieron sin borrar historia (queda dicho qué quedó
+  superado y por qué); la lista «Cambios que Vul debe hacer a DEFINICION.md» se reemplazó por «Pendiente para la v1.2»
+  comparada con la v1.1. Dos de mis elecciones: (1) incluí en la v1.2 los códigos de error que la v1.1 no lista
+  (`auto_modificacion_no_permitida`, `ultimo_administrador`, `correo_duplicado`, `numero_nomina_duplicado`,
+  `tipo_no_soportado`); (2) dejé también como pendiente separar `GENERAR_REPORTES` y aclarar que
+  «Recibir correos de caducidad» no es un permiso de API, porque la v1.1 sigue igual en esos puntos.
+- **Documentos nuevos**: `docs/pendientes.md` (lo diferido por sprint, más lo que queda abierto del CI),
+  `docs/revision-sprint1.md` (27 hallazgos con decisión y evidencia, reconstruidos desde `decisiones.md` y el historial;
+  los marcados «Claude» son decisiones mías para revisar).
+

@@ -1,0 +1,169 @@
+# Desarrollo. Se invoca desde la raíz con `make up`, que pasa --env-file .env
+# (el compose vive en deploy/ y Compose no lee el .env de la raíz por sí solo).
+name: metrologia
+
+x-hardening: &hardening
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  db:
+    <<: *hardening
+    image: postgres:18.6-alpine3.23@sha256:885cf05d376c7cf27afef02073e6bdac3841252537f16e244fd1c1e6a7c99fb1
+    user: "70:70" # postgres (alpine); no arranca como root
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: ${DB_NAME:?Falta DB_NAME en .env}
+      MIGRATOR_PASSWORD: ${MIGRATOR_PASSWORD:?Falta MIGRATOR_PASSWORD en .env}
+      APP_PASSWORD: ${APP_PASSWORD:?Falta APP_PASSWORD en .env}
+    volumes:
+      - db_data:/var/lib/postgresql
+      - ./db/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+      - ./db/init.sql:/opt/db/init.sql:ro
+      - ./db/privileges.sql:/opt/db/privileges.sql:ro
+    # Sin `ports`: la base de datos no se publica al host.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    tmpfs: ["/run/postgresql"]
+    networks: [internal]
+
+  api:
+    <<: *hardening
+    build: {context: ../backend, target: runtime}
+    # Argon2 usa ~100 MiB por verificación; 3 workers + base de Python (ver docs/decisiones.md).
+    mem_limit: 768m
+    memswap_limit: 768m
+    pids_limit: 256
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Falta DJANGO_SECRET_KEY en .env}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      API_NUM_PROXIES: ${API_NUM_PROXIES:-1}
+      # Sin valor por defecto aquí: si no está en .env, manda el de config/settings/guards.py.
+      TRUSTED_PROXY_CIDRS:
+      PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-10}
+      SESSION_IDLE_MINUTES: ${SESSION_IDLE_MINUTES:-30}
+      SESSION_ABSOLUTE_HOURS: ${SESSION_ABSOLUTE_HOURS:-12}
+      PASSWORD_CHANGE_RATE_PER_USER: # sin valor aquí: el de config/settings/base.py
+      ADMIN_LOCK_TIMEOUT_MS: # sin valor aquí: el de config/settings/base.py
+      LOGIN_MAX_FAILED_ATTEMPTS: ${LOGIN_MAX_FAILED_ATTEMPTS:-5}
+      LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
+      LOGIN_RATE_PER_IP_EMAIL: ${LOGIN_RATE_PER_IP_EMAIL:-5}
+      LOGIN_RATE_PER_IP: ${LOGIN_RATE_PER_IP:-20}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME}
+      DB_USER: app
+      DB_PASSWORD: ${APP_PASSWORD}
+    depends_on:
+      db: {condition: service_healthy}
+    read_only: true
+    tmpfs: ["/tmp"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/v1/health/', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [internal, egress] # la única con salida a internet (p. ej. SMTP en el sprint 4)
+
+  # Herramientas puntuales (perfil `tools`): corren con el rol `migrator`, nunca con `app`.
+  migrate:
+    profiles: [tools]
+    build: {context: ../backend, target: runtime}
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    environment: &migrator-env
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Falta DJANGO_SECRET_KEY en .env}
+      DB_HOST: db
+      DB_NAME: ${DB_NAME}
+      DB_USER: migrator
+      DB_PASSWORD: ${MIGRATOR_PASSWORD:?Falta MIGRATOR_PASSWORD en .env}
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [internal]
+
+  test:
+    profiles: [tools]
+    build: {context: ../backend, target: test}
+    environment:
+      <<: *migrator-env
+      COVERAGE_FILE: /tmp/.coverage
+      APP_DB_PASSWORD: ${APP_PASSWORD:?Falta APP_PASSWORD en .env} # solo para probar los privilegios del rol app
+    volumes:
+      # Fuera de /app: si se monta backend/ sobre /app, Docker no crea archivos vacíos en el repo.
+      - ../.env.example:/opt/test/.env.example:ro
+      - ./db/privileges.sql:/opt/test/privileges.sql:ro # las pruebas de roles lo aplican a su base propia
+      - ../docs:/opt/test/docs:ro # la prueba de la lista de seguridad verifica sus referencias
+      - ../Makefile:/opt/test/Makefile:ro
+      - ../.gitignore:/opt/test/.gitignore:ro
+      - ../deploy:/opt/test/deploy:ro # pruebas de las redes del compose y de proxytest.sh
+      - ../.github:/opt/test/.github:ro # pruebas del flujo de CI y de dependabot
+      - ../.claude/hooks:/opt/test/hooks:ro # pruebas del hook de archivos protegidos
+    depends_on:
+      db: {condition: service_healthy}
+    read_only: true
+    tmpfs: ["/tmp"]
+    networks: [internal]
+
+  web:
+    <<: *hardening
+    build: ../frontend
+    depends_on:
+      api: {condition: service_healthy}
+    read_only: true
+    tmpfs: ["/tmp"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [internal]
+
+  proxy:
+    <<: *hardening
+    image: caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    user: "10001:10001" # Caddy escucha en 8080 (sin privilegios)
+    # El binario de Caddy lleva file capability net_bind_service; con cap_drop ALL
+    # el kernel rechaza el exec. Se devuelve solo esa capacidad.
+    cap_add: [NET_BIND_SERVICE]
+    environment:
+      CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-8080}:8080" # único puerto publicado, solo loopback
+    depends_on:
+      api: {condition: service_healthy}
+      web: {condition: service_healthy}
+    read_only: true
+    tmpfs:
+      - /data:uid=10001,gid=10001
+      - /config:uid=10001,gid=10001
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [internal, edge] # edge: solo para publicar el puerto en 127.0.0.1
+
+# Solo `api` tiene salida a internet. La base de datos y el resto viven en `internal`, que no la
+# tiene; el proxy necesita una red normal para publicar su puerto, pero sin NAT (no sale).
+networks:
+  internal:
+    internal: true
+  edge:
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+  egress: {}
+
+volumes:
+  db_data: {}

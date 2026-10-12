@@ -1,0 +1,8 @@
+# Dependencias de pruebas y calidad. Se bloquean con `make lock` (requirements-dev.txt, con hashes).
+-c requirements.txt
+pytest
+pytest-django
+pytest-cov
+factory-boy
+ruff
+pip-audit

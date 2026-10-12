@@ -1,0 +1,51 @@
+# Integración continua. Equivale a `make ci`, repartido en trabajos paralelos.
+# Sin secretos: todo corre con los valores de ejemplo de .env.example (el Makefile crea .env).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  calidad:
+    name: lint, auditoría y secretos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks revisa todo el historial
+          persist-credentials: false
+      - run: make lint
+      - run: make audit
+      - run: make secrets
+
+  pruebas:
+    name: pruebas (pytest, cobertura 95 %)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: make test
+
+  proxy-y-esquema:
+    name: pruebas de proxy y esquema OpenAPI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: make schema
+      - run: make test-proxy

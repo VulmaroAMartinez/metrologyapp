@@ -1,0 +1,49 @@
+# Se suma a docker-compose.yml solo en `make test-proxy` (proyecto y volumen aparte).
+# Añade una API en modo producción para comprobar, a través de Caddy, que una cabecera
+# X-Forwarded-Proto falsificada no evita la redirección a HTTPS.
+services:
+  api:
+    environment:
+      # Las pruebas funcionales (cabeceras, cookies, flujos) también inician sesión desde la misma IP:
+      # se sube el límite por IP sola para no agotarlo; el límite por IP+correo sigue siendo 5.
+      LOGIN_RATE_PER_IP: "40"
+
+  api-prod:
+    restart: "no"
+    build: {context: ../backend, target: runtime}
+    mem_limit: 768m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?}
+      DB_HOST: db
+      DB_NAME: ${DB_NAME}
+      DB_USER: app
+      DB_PASSWORD: ${APP_PASSWORD:?}
+      # Producción exige acotar los proxies de confianza: la subred fija de abajo.
+      TRUSTED_PROXY_CIDRS: 172.29.250.0/24
+    depends_on:
+      db: {condition: service_healthy}
+    read_only: true
+    tmpfs: ["/tmp"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/v1/health/', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [internal]
+
+  proxy:
+    volumes:
+      - ./proxytest.caddy:/etc/caddy/extra/proxytest.caddy:ro
+    depends_on:
+      api-prod: {condition: service_healthy}
+
+networks:
+  internal:
+    ipam:
+      config:
+        - subnet: 172.29.250.0/24

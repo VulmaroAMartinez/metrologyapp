@@ -1,0 +1,36 @@
+title = "metrologyapp"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Plantilla sin secretos reales"
+paths = ['''\.env\.example$''']
+
+[[allowlists]]
+description = "Caché generada por graphify (ignorada por git): hashes que parecen claves"
+paths = ['''^graphify-out/''']
+
+# Solo constantes con estos nombres, dentro de tests: no es una exención general de tests/.
+[[allowlists]]
+description = "Contraseñas de prueba (constantes de tests)"
+condition = "AND"
+regexTarget = "line"
+paths = ['''backend/.*/tests/.*\.py$''', '''backend/apps/core/testing\.py$''']
+regexes = ['''(DEFAULT_PASSWORD|SECRET)\s*=\s*"[^"]+"''']
+
+# Falso positivo: pruebas que comprueban que NO se puede ordenar por columnas sensibles.
+[[allowlists]]
+description = "Parámetros de orden prohibidos en pruebas"
+condition = "AND"
+regexTarget = "line"
+paths = ['''backend/apps/accounts/tests/test_usuarios_api(_listar)?\.py$''']
+regexes = ['''orden=(password|intentos_fallidos)''']
+
+# Falso positivo: filtros de la bitácora en pruebas (p. ej. "usuario=987654", "instrumento_id=5").
+[[allowlists]]
+description = "Parámetros de filtro de la bitácora en pruebas"
+condition = "AND"
+regexTarget = "line"
+paths = ['''backend/apps/audit/tests/test_bitacora_api\.py$''']
+regexes = ['''recorrer\(api_admin(_directo)?, "(usuario|instrumento_id)=[A-Za-z0-9]+"\)''']
